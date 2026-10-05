@@ -36,6 +36,10 @@ import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.ImportExport
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
+import androidx.compose.material.icons.rounded.SwapVert
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.Commute
@@ -43,6 +47,7 @@ import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.Newspaper
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.RecordVoiceOver
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SportsSoccer
 import androidx.compose.material3.Button
@@ -54,12 +59,14 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TimePicker
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -92,11 +99,16 @@ import com.brieffo.app.data.CalendarInfo
 import com.brieffo.app.data.CalendarRepo
 import com.brieffo.app.data.CardKeys
 import com.brieffo.app.data.Feed
+import com.brieffo.app.data.GeminiException
+import com.brieffo.app.data.LocalVoice
 import com.brieffo.app.data.NewsRepo
 import com.brieffo.app.data.Prefs
 import com.brieffo.app.data.SportRepo
+import com.brieffo.app.data.Summary
 import com.brieffo.app.data.TeamRef
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -162,21 +174,33 @@ fun SettingsScreen(
     var city by remember { mutableStateOf(prefs.city) }
     var goal by remember { mutableStateOf(prefs.stepGoal.toString()) }
     var hidden by remember { mutableStateOf(prefs.hidden) }
+    var order by remember { mutableStateOf(prefs.cardOrder) }
     var feeds by remember { mutableStateOf(prefs.feeds) }
     var team by remember { mutableStateOf(prefs.team) }
     var teamRef by remember { mutableStateOf(prefs.teamRef) }
     var work by remember { mutableStateOf(prefs.workAddress) }
     var mode by remember { mutableStateOf(prefs.travelMode) }
     var notify by remember { mutableStateOf(prefs.notifyEnabled) }
+    var speechSpeed by remember { mutableIntStateOf(prefs.speechSpeed) }
+    var speechVoice by remember { mutableStateOf(prefs.speechVoice) }
+    var speechEngine by remember { mutableStateOf(prefs.speechEngine) }
+    var localVoice by remember { mutableStateOf(prefs.localVoice) }
+    var voicesVersion by remember { mutableIntStateOf(0) }
     var pickTime by remember { mutableStateOf(false) }
     val time = rememberTimePickerState(prefs.notifyHour, prefs.notifyMinute, is24Hour = true)
     var key by remember { mutableStateOf(prefs.geminiKey) }
+    var collapsed by remember { mutableStateOf(prefs.summaryCollapsed) }
+    var testingKey by remember { mutableStateOf(false) }
+    var keyTest by remember { mutableStateOf<String?>(null) }
     var calOn by remember { mutableStateOf(prefs.calendarsOn) }
     var calOff by remember { mutableStateOf(prefs.calendarsOff) }
     var calendarsVersion by remember { mutableIntStateOf(0) }
     val calendars = remember(calendarsVersion) { runCatching { CalendarRepo.calendars(context) }.getOrDefault(emptyList()) }
     var syncing by remember { mutableStateOf(emptySet<Long>()) }
     var pendingSync by remember { mutableStateOf(emptyList<CalendarInfo>()) }
+    var forcing by remember { mutableStateOf(false) }
+    var syncMessage by remember { mutableStateOf<String?>(null) }
+    val pageScope = rememberCoroutineScope()
     fun startSync(list: List<CalendarInfo>) {
         val done = list.filter { CalendarRepo.enableSync(context, it) }
         syncing = syncing + done.map { it.id }
@@ -198,6 +222,7 @@ fun SettingsScreen(
         prefs.city = city
         prefs.stepGoal = goal.toIntOrNull() ?: 8000
         prefs.hidden = hidden
+        prefs.cardOrder = order
         prefs.feeds = feeds
         prefs.team = team
         prefs.teamRef = teamRef
@@ -207,9 +232,50 @@ fun SettingsScreen(
         prefs.notifyHour = time.hour
         prefs.notifyMinute = time.minute
         prefs.geminiKey = key
+        prefs.summaryCollapsed = collapsed
         prefs.calendarsOn = calOn
         prefs.calendarsOff = calOff
     }
+    var backupMessage by remember { mutableStateOf<String?>(null) }
+    val exportBackup = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        if (uri != null) {
+            // Prima si scrivono le modifiche ancora aperte in questa pagina, così il file le contiene.
+            save()
+            val ok = runCatching { context.contentResolver.openOutputStream(uri)!!.use { it.write(prefs.export().toByteArray()) } }.isSuccess
+            backupMessage = if (ok) "Configurazione esportata. Il file contiene anche la chiave di Gemini: non condividerlo." else "Non sono riuscito a scrivere il file."
+        }
+    }
+    val importBackup = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            val text = runCatching { context.contentResolver.openInputStream(uri)!!.use { it.readBytes().decodeToString() } }.getOrNull()
+            if (text != null && prefs.import(text)) {
+                // La pagina rilegge tutto: uscendo salverebbe altrimenti i valori di prima sopra quelli importati.
+                name = prefs.name
+                city = prefs.city
+                goal = prefs.stepGoal.toString()
+                hidden = prefs.hidden
+                order = prefs.cardOrder
+                feeds = prefs.feeds
+                team = prefs.team
+                teamRef = prefs.teamRef
+                work = prefs.workAddress
+                mode = prefs.travelMode
+                notify = prefs.notifyEnabled
+                time.hour = prefs.notifyHour
+                time.minute = prefs.notifyMinute
+                key = prefs.geminiKey
+                collapsed = prefs.summaryCollapsed
+                speechSpeed = prefs.speechSpeed
+                speechVoice = prefs.speechVoice
+                speechEngine = prefs.speechEngine
+                localVoice = prefs.localVoice
+                onTheme(prefs.themeMode)
+                onAccent(prefs.accent)
+                backupMessage = "Configurazione importata. I calendari vanno scelti di nuovo: su ogni telefono sono diversi."
+            } else backupMessage = "Questo file non è un backup di Brieffo."
+        }
+    }
+
     // Niente pulsante Salva: le modifiche si scrivono quando si lascia la pagina, poi il brief si ricarica.
     val latestSave by rememberUpdatedState(save)
     DisposableEffect(Unit) {
@@ -296,6 +362,35 @@ fun SettingsScreen(
             Note("Il riepilogo in cima resta sempre visibile. Le schede spente non scaricano dati.")
         }
 
+        BriefCard("Ordine delle schede", Icons.Rounded.SwapVert) {
+            ToggleRow("Ordine automatico", order.isEmpty(), detail = "Cambia con il momento della giornata") { auto ->
+                order = if (auto) emptyList() else CardKeys.sortable
+            }
+            if (order.isNotEmpty()) {
+                val full = CardKeys.ordered(order)
+                val shown = full.filter { it !in hidden }
+                // Le frecce scambiano la scheda con quella visibile più vicina, saltando quelle spente.
+                fun swap(a: String, b: String) {
+                    order = full.map { if (it == a) b else if (it == b) a else it }
+                }
+                Spacer(Modifier.height(4.dp))
+                shown.forEachIndexed { i, cardKey ->
+                    val label = CardKeys.labels[cardKey]?.substringBefore(" (") ?: cardKey
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text("${i + 1}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = p.sub, modifier = Modifier.width(26.dp))
+                        Text(label, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                        IconButton(onClick = { swap(cardKey, shown[i - 1]) }, enabled = i > 0) {
+                            Icon(Icons.Rounded.KeyboardArrowUp, "Sposta su $label", tint = if (i > 0) p.accent else p.sub.copy(alpha = 0.4f))
+                        }
+                        IconButton(onClick = { swap(cardKey, shown[i + 1]) }, enabled = i < shown.lastIndex) {
+                            Icon(Icons.Rounded.KeyboardArrowDown, "Sposta giù $label", tint = if (i < shown.lastIndex) p.accent else p.sub.copy(alpha = 0.4f))
+                        }
+                    }
+                }
+                Note("Il riepilogo resta sempre in cima. Le schede spente non compaiono in questo elenco.")
+            }
+        }
+
         if (CardKeys.AGENDA !in hidden) BriefCard("Calendari", Icons.Rounded.CalendarMonth) {
             if (calendars.isEmpty()) {
                 Hint("Non vedo calendari: consenti l'accesso al calendario per sceglierli.")
@@ -330,6 +425,36 @@ fun SettingsScreen(
                     }
                 }
                 Spacer(Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = {
+                        val started = CalendarRepo.forceSync(calendars.filter { CalendarRepo.isSelected(it, calOn, calOff) })
+                        if (started == 0) syncMessage = "Nessun calendario acceso da sincronizzare: quelli salvati solo sul telefono sono già aggiornati."
+                        else {
+                            forcing = true
+                            syncMessage = null
+                            pageScope.launch {
+                                // Android non avvisa quando ha finito: si aspetta qualche secondo e si rilegge l'elenco.
+                                delay(6000)
+                                calendarsVersion++
+                                forcing = false
+                                syncMessage = "Sincronizzazione richiesta ad Android: tornando al brief trovi l'agenda aggiornata."
+                            }
+                        }
+                    },
+                    enabled = !forcing,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    if (forcing) {
+                        CircularProgressIndicator(Modifier.size(16.dp), color = p.accent, strokeWidth = 2.dp)
+                        Spacer(Modifier.width(10.dp))
+                    }
+                    Text(if (forcing) "Sincronizzo…" else "Sincronizza ora", color = p.accent)
+                }
+                syncMessage?.let {
+                    Spacer(Modifier.height(6.dp))
+                    Note(it)
+                }
+                Spacer(Modifier.height(8.dp))
                 Note(
                     "Google Calendar mostra tutti i calendari, ma Android ne salva sul telefono solo alcuni: le altre app possono leggere solo quelli. " +
                         "Quando ne accendi uno non scaricato, Brieffo chiede ad Android di scaricarlo (serve il permesso di modifica del calendario, " +
@@ -355,6 +480,86 @@ fun SettingsScreen(
             }
         }
 
+        BriefCard("Lettura ad alta voce", Icons.Rounded.RecordVoiceOver) {
+            // Voce e velocità si salvano subito, così "Ascolta un esempio" usa già la scelta appena fatta.
+            Text("Velocità: %.1f×".format(speechSpeed / 100f), fontSize = 15.sp)
+            Slider(
+                value = speechSpeed.toFloat(),
+                onValueChange = { v -> speechSpeed = (v / 10).roundToInt() * 10; prefs.speechSpeed = speechSpeed },
+                valueRange = 60f..160f, steps = 9,
+            )
+            Note("Chi legge")
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("local" to "Voce locale", "gemini" to "Gemini", "phone" to "Telefono").forEach { (value, label) ->
+                    FilterChip(selected = speechEngine == value, onClick = { speechEngine = value; prefs.speechEngine = value }, label = { Text(label) })
+                }
+            }
+            when (speechEngine) {
+                "local" -> {
+                    Note("Voce")
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        LocalVoice.VOICES.forEach { v ->
+                            val ready = remember(v.id, voicesVersion) { LocalVoice.installed(context, v.id) }
+                            FilterChip(
+                                selected = localVoice == v.id,
+                                onClick = { localVoice = v.id; prefs.localVoice = v.id },
+                                label = { Text(if (ready) "${v.label} · scaricata" else "${v.label} · ${v.megabytes} MB") },
+                            )
+                        }
+                    }
+                }
+                "gemini" -> {
+                    Note("Voce")
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Summary.VOICES.forEach { (voice, character) ->
+                            FilterChip(
+                                selected = speechVoice == voice,
+                                onClick = { speechVoice = voice; prefs.speechVoice = voice },
+                                label = { Text("$voice · $character") },
+                            )
+                        }
+                    }
+                }
+            }
+            val speaker = rememberSpeaker()
+            OutlinedButton(
+                onClick = {
+                    // La chiave scritta in questa pagina si salva solo uscendo: per l'esempio serve subito.
+                    prefs.geminiKey = key
+                    speaker.toggle("Ciao, sono la voce che ti leggerà il riepilogo della giornata.")
+                },
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            ) {
+                Text(
+                    when (speaker.status) {
+                        Speaker.Status.LOADING -> "Preparo la voce…"
+                        Speaker.Status.PLAYING -> "Ferma"
+                        Speaker.Status.IDLE -> "Ascolta un esempio"
+                    },
+                    color = p.accent,
+                )
+            }
+            speaker.note?.let {
+                Spacer(Modifier.height(6.dp))
+                Note(it)
+            }
+            Spacer(Modifier.height(8.dp))
+            Note(
+                when (speechEngine) {
+                    "local" -> "Gratuita e senza limiti: la voce gira tutta sul telefono e il testo non esce da qui. Si scarica una volta sola al primo ascolto, poi funziona anche senza rete."
+                    "gemini" -> "La voce più naturale, ma serve la chiave di Gemini: il testo viene inviato a Google e il piano gratuito ha un numero limitato di letture al giorno."
+                    else -> "La sintesi vocale di Android: sempre disponibile, meno naturale. Si regola solo la velocità."
+                } + " Il tasto Ascolta è nella scheda del riepilogo."
+            )
+            if (speechEngine == "local" && LocalVoice.VOICES.any { remember(it.id, voicesVersion) { LocalVoice.installed(context, it.id) } }) {
+                OutlinedButton(onClick = { LocalVoice.deleteAll(context); voicesVersion++ }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                    Text("Elimina le voci scaricate", color = p.accent)
+                }
+            }
+            // Finito un ascolto la voce può essere appena stata scaricata: le etichette si aggiornano.
+            LaunchedEffect(speaker.status) { if (speaker.status == Speaker.Status.IDLE) voicesVersion++ }
+        }
+
         BriefCard("Notifica giornaliera", Icons.Rounded.NotificationsActive) {
             ToggleRow("Ricevi il brief ogni giorno", notify, detail = "All'ora che scegli qui sotto") { notify = it }
             if (notify) {
@@ -363,6 +568,22 @@ fun SettingsScreen(
                     Text("Ore %02d:%02d".format(time.hour, time.minute), color = p.accent)
                 }
                 if (pickTime) TimePicker(time, modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 12.dp))
+            }
+        }
+
+        BriefCard("Backup della configurazione", Icons.Rounded.ImportExport) {
+            Note("Per cambiare telefono: esporta la configurazione in un file, portalo sul nuovo telefono e importalo da qui.")
+            Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedButton(onClick = { exportBackup.launch("brieffo-backup.json") }, modifier = Modifier.weight(1f)) {
+                    Text("Esporta", color = p.accent)
+                }
+                OutlinedButton(onClick = { importBackup.launch(arrayOf("application/json", "text/plain", "application/octet-stream")) }, modifier = Modifier.weight(1f)) {
+                    Text("Importa", color = p.accent)
+                }
+            }
+            backupMessage?.let {
+                Spacer(Modifier.height(8.dp))
+                Note(it)
             }
         }
 
@@ -393,9 +614,34 @@ fun SettingsScreen(
                         Text("Apri Google AI Studio", color = p.accent)
                     }
                 }
-                Field(key, { key = it }, "Chiave API Gemini (facoltativa)", secret = true)
+                ToggleRow("Riepilogo chiuso all'apertura", collapsed, detail = "Mostra le prime due righe: il resto si apre con un tocco") { collapsed = it }
+                Field(key, { key = it; keyTest = null }, "Chiave API Gemini (facoltativa)", secret = true)
+                OutlinedButton(
+                    onClick = {
+                        testingKey = true
+                        keyTest = null
+                        pageScope.launch {
+                            keyTest = withContext(Dispatchers.IO) {
+                                runCatching { "La chiave funziona: ha risposto ${Summary.testKey(key)}." }.getOrElse { e ->
+                                    val detail = (e as? GeminiException)?.detail?.let { "\nRisposta di Google: $it" }.orEmpty()
+                                    "La chiave non funziona: ${e.message ?: "errore sconosciuto"}.$detail"
+                                }
+                            }
+                            testingKey = false
+                        }
+                    },
+                    enabled = key.isNotBlank() && !testingKey,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    if (testingKey) {
+                        CircularProgressIndicator(Modifier.size(16.dp), color = p.accent, strokeWidth = 2.dp)
+                        Spacer(Modifier.width(10.dp))
+                    }
+                    Text(if (testingKey) "Chiedo a Gemini…" else "Prova la chiave", color = if (key.isNotBlank()) p.accent else p.sub)
+                }
+                keyTest?.let { Text(it, fontSize = 13.sp, lineHeight = 18.sp) }
                 Note(
-                    "Con la chiave attiva, meteo, titoli degli impegni e dati di attività vengono inviati a Google per generare il testo. " +
+                    "Con la chiave attiva, i dati di tutte le schede accese (compresi impegni, app più usate e nomi dei compleanni) vengono inviati a Google per generare il testo, al massimo ogni quattro ore o quando aggiorni tu. " +
                         "Senza chiave tutto resta sul telefono e il riepilogo è composto dall'app. La chiave è salvata solo su questo dispositivo."
                 )
             }

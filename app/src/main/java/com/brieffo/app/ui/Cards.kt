@@ -1,6 +1,21 @@
 package com.brieffo.app.ui
 
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.ui.draw.rotate
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -22,6 +37,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.Air
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.BatteryAlert
@@ -43,11 +59,14 @@ import androidx.compose.material.icons.rounded.Place
 import androidx.compose.material.icons.rounded.QueryStats
 import androidx.compose.material.icons.rounded.Route
 import androidx.compose.material.icons.rounded.Smartphone
+import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.SelfImprovement
 import androidx.compose.material.icons.rounded.TipsAndUpdates
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -121,20 +140,107 @@ internal fun ActionButton(text: String, onClick: () -> Unit) {
     ) { Text(text) }
 }
 
+/** Righe segnaposto che pulsano al posto del testo, alte quanto le righe del riepilogo. */
+@Composable
+private fun SummarySkeleton() {
+    val p = LocalPalette.current
+    val pulse by rememberInfiniteTransition(label = "skeleton").animateFloat(
+        initialValue = 0.10f, targetValue = 0.24f,
+        animationSpec = infiniteRepeatable(tween(850), RepeatMode.Reverse), label = "alpha",
+    )
+    Column(verticalArrangement = Arrangement.spacedBy(11.dp), modifier = Modifier.padding(vertical = 5.dp)) {
+        listOf(1f, 0.94f, 0.98f, 0.62f).forEach { width ->
+            Box(Modifier.fillMaxWidth(width).height(16.dp).background(p.text.copy(alpha = pulse), RoundedCornerShape(8.dp)))
+        }
+    }
+}
+
+/** Quante righe del riepilogo di Gemini restano visibili quando è chiuso. */
+private const val SUMMARY_PREVIEW = 2
+
+/** Una riga del riepilogo di Gemini: l'emoji con cui comincia diventa l'icona a sinistra. */
+@Composable
+private fun SummaryLine(line: String) {
+    val head = line.substringBefore(' ')
+    val hasIcon = head.length in 1..8 && head.length < line.length && !head.first().isLetterOrDigit()
+    Row {
+        if (hasIcon) Text(head, fontSize = 20.sp, lineHeight = 26.sp, modifier = Modifier.width(36.dp))
+        Text(if (hasIcon) line.substringAfter(' ').trim() else line, fontSize = 17.sp, lineHeight = 26.sp, fontWeight = FontWeight.Medium)
+    }
+}
+
 @Composable
 fun SummaryCard(s: BriefState) {
     val p = LocalPalette.current
     BriefCard(
-        title = if (s.summaryByAi) "Riepilogo · scritto da Gemini" else "Riepilogo",
+        title = when {
+            s.summaryLoading -> "Riepilogo · Gemini sta scrivendo…"
+            s.summaryByAi -> "Riepilogo · scritto da Gemini"
+            else -> "Riepilogo"
+        },
         icon = Icons.Rounded.AutoAwesome,
     ) {
-        Text(
-            text = s.summary.ifEmpty { "Sto preparando il tuo brief…" },
-            fontSize = 18.sp, lineHeight = 27.sp, fontWeight = FontWeight.Medium,
-            color = if (s.summary.isEmpty()) p.sub else p.text,
-        )
+        // Aggiornando un riepilogo già scritto da Gemini resta visibile il testo di prima.
+        val skeleton = s.summaryLoading && !s.summaryByAi
+        when {
+            skeleton -> SummarySkeleton()
+            s.summaryByAi -> {
+                val lines = s.summary.lines().filter { it.isNotBlank() }
+                // Il riepilogo può essere lungo: chiuso mostra solo le prime righe, le più importanti.
+                var expanded by rememberSaveable(s.summaryCollapsed) { mutableStateOf(!s.summaryCollapsed) }
+                val turn by animateFloatAsState(if (expanded) 180f else 0f, label = "chevron")
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) { lines.take(SUMMARY_PREVIEW).forEach { SummaryLine(it) } }
+                AnimatedVisibility(
+                    visible = expanded && lines.size > SUMMARY_PREVIEW,
+                    enter = expandVertically(spring(dampingRatio = 0.9f, stiffness = Spring.StiffnessMediumLow)) + fadeIn(),
+                    exit = shrinkVertically(spring(dampingRatio = 0.9f, stiffness = Spring.StiffnessMediumLow)) + fadeOut(),
+                ) {
+                    Column(Modifier.padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        lines.drop(SUMMARY_PREVIEW).forEach { SummaryLine(it) }
+                    }
+                }
+                if (lines.size > SUMMARY_PREVIEW) Row(
+                    Modifier
+                        .padding(top = 8.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { expanded = !expanded }
+                        .padding(horizontal = 6.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Rounded.KeyboardArrowDown, null, Modifier.size(20.dp).rotate(turn), tint = p.accent)
+                    Text(
+                        if (expanded) "Mostra meno" else "Mostra tutto (altre ${lines.size - SUMMARY_PREVIEW} righe)",
+                        fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = p.accent, modifier = Modifier.padding(start = 4.dp),
+                    )
+                }
+            }
+            else -> Text(
+                text = s.summary.ifEmpty { "Sto preparando il tuo brief…" },
+                fontSize = 18.sp, lineHeight = 27.sp, fontWeight = FontWeight.Medium,
+                color = if (s.summary.isEmpty()) p.sub else p.text,
+            )
+        }
         if (s.aiError != null) {
             Text("Gemini non ha risposto (${s.aiError}): questo è il riepilogo dell'app.", fontSize = 12.sp, color = p.sub, modifier = Modifier.padding(top = 10.dp))
+        }
+        if (!skeleton && s.summary.isNotEmpty()) {
+            val speaker = rememberSpeaker()
+            OutlinedButton(onClick = { speaker.toggle(s.summary) }, modifier = Modifier.padding(top = 12.dp)) {
+                when (speaker.status) {
+                    Speaker.Status.LOADING -> CircularProgressIndicator(Modifier.size(16.dp), color = p.accent, strokeWidth = 2.dp)
+                    Speaker.Status.PLAYING -> Icon(Icons.Rounded.Stop, null, Modifier.size(18.dp), tint = p.accent)
+                    Speaker.Status.IDLE -> Icon(Icons.AutoMirrored.Rounded.VolumeUp, null, Modifier.size(18.dp), tint = p.accent)
+                }
+                Text(
+                    when (speaker.status) {
+                        Speaker.Status.LOADING -> "Preparo la voce…"
+                        Speaker.Status.PLAYING -> "Ferma"
+                        Speaker.Status.IDLE -> "Ascolta"
+                    },
+                    color = p.accent, modifier = Modifier.padding(start = 8.dp),
+                )
+            }
+            speaker.note?.let { Text(it, fontSize = 12.sp, color = p.sub, modifier = Modifier.padding(top = 6.dp)) }
         }
     }
 }

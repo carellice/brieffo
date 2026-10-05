@@ -23,6 +23,7 @@ import com.brieffo.app.data.Summary
 import com.brieffo.app.data.UsageRepo
 import com.brieffo.app.data.UsageState
 import com.brieffo.app.data.WeatherRepo
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
@@ -47,20 +48,26 @@ class BriefViewModel(app: Application) : AndroidViewModel(app) {
         refresh()
     }
 
-    /** Al ritorno in primo piano ricarica solo se i dati sono vecchi di oltre un minuto. */
+    /** Al ritorno in primo piano il brief si ricarica da solo soltanto se è più vecchio di [MAX_AGE]. */
     fun refreshIfStale() {
-        if (System.currentTimeMillis() - lastRefresh > 60_000) refresh()
+        if (System.currentTimeMillis() - lastRefresh > MAX_AGE) refresh()
     }
 
-    fun refresh() {
+    /**
+     * Ricarica i dati del brief. Il riepilogo di Gemini viene riscritto solo se quello salvato è più vecchio
+     * di [MAX_AGE] oppure se lo chiede l'utente trascinando verso il basso ([forceAi]): così le richieste non si accumulano.
+     */
+    fun refresh(forceAi: Boolean = false) {
         lastRefresh = System.currentTimeMillis()
         job?.cancel()
         job = viewModelScope.launch {
             val app = getApplication<Application>()
             val now = LocalDateTime.now()
+            val key = prefs.geminiKey
+            val savedAi = prefs.aiSummary.takeIf { !forceAi && it.isNotBlank() && System.currentTimeMillis() - prefs.aiSummaryAt < MAX_AGE }
             _state.update {
                 it.copy(
-                    loading = true, now = now, daypart = Daypart.of(now.hour),
+                    loading = true, summaryLoading = key.isNotBlank() && savedAi == null, now = now, daypart = Daypart.of(now.hour),
                     name = prefs.name, stepGoal = prefs.stepGoal,
                     calendarGranted = CalendarRepo.granted(app),
                     moon = DeviceRepo.moon(), battery = DeviceRepo.battery(app),
@@ -71,6 +78,8 @@ class BriefViewModel(app: Application) : AndroidViewModel(app) {
             _state.update {
                 it.copy(
                     hidden = hidden,
+                    cardOrder = prefs.cardOrder,
+                    summaryCollapsed = prefs.summaryCollapsed,
                     travelConfigured = prefs.workAddress.isNotBlank(),
                     sportConfigured = prefs.team.isNotBlank() || prefs.teamRef.isNotBlank(),
                     newsConfigured = prefs.feeds.any { f -> f.enabled },
@@ -142,15 +151,31 @@ class BriefViewModel(app: Application) : AndroidViewModel(app) {
                     _state.update { it.copy(occasions = o) }
                 }
             }
-            _state.update { it.copy(loading = false, summary = Summary.rules(it), summaryByAi = false, aiError = null) }
-
-            val key = prefs.geminiKey
-            if (key.isNotBlank()) {
+            if (key.isBlank()) {
+                _state.update { it.copy(loading = false, summary = Summary.rules(it), summaryByAi = false, summaryLoading = false, aiError = null) }
+            } else if (savedAi != null) {
+                _state.update { it.copy(loading = false, summary = savedAi, summaryByAi = true, summaryLoading = false, aiError = null) }
+            } else {
+                // Il riepilogo dell'app resta di riserva: finché Gemini scrive, la scheda mostra il caricamento.
+                _state.update { it.copy(loading = false, aiError = null) }
                 val snapshot = _state.value
                 runCatching { withContext(Dispatchers.IO) { Summary.gemini(key, snapshot) } }
-                    .onSuccess { text -> _state.update { it.copy(summary = text, summaryByAi = true) } }
-                    .onFailure { e -> _state.update { it.copy(aiError = e.message ?: "connessione non riuscita") } }
+                    .onSuccess { text ->
+                        prefs.aiSummary = text
+                        _state.update { it.copy(summary = text, summaryByAi = true, summaryLoading = false) }
+                    }
+                    .onFailure { e ->
+                        if (e is CancellationException) throw e
+                        _state.update {
+                            it.copy(summary = Summary.rules(it), summaryByAi = false, summaryLoading = false, aiError = e.message ?: "connessione non riuscita")
+                        }
+                    }
             }
         }
+    }
+
+    private companion object {
+        /** Ogni quanto il brief, e con lui il riepilogo di Gemini, si aggiorna da solo: quattro ore. */
+        const val MAX_AGE = 4 * 60 * 60 * 1000L
     }
 }

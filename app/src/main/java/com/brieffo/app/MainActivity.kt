@@ -113,7 +113,7 @@ class MainActivity : ComponentActivity() {
 
             val actions = remember {
                 BriefActions(
-                    refresh = vm::refresh,
+                    refresh = { vm.refresh(forceAi = true) },
                     openSettings = { tab = 1 },
                     grantBasics = { basics.launch(basicPermissions) },
                     connectHealth = { health.launch(HealthRepo.permissions) },

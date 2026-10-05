@@ -1,5 +1,10 @@
 package com.brieffo.app.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -22,6 +27,8 @@ import androidx.compose.material.icons.rounded.Alarm
 import androidx.compose.material.icons.rounded.Cake
 import androidx.compose.material.icons.rounded.Church
 import androidx.compose.material.icons.rounded.Event
+import androidx.compose.material.icons.rounded.NotificationsActive
+import androidx.compose.material.icons.rounded.NotificationsNone
 import androidx.compose.material.icons.rounded.Place
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material.icons.rounded.Celebration
@@ -29,8 +36,14 @@ import androidx.compose.material.icons.rounded.Commute
 import androidx.compose.material.icons.rounded.SportsSoccer
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -44,11 +57,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import com.brieffo.app.data.BriefState
 import com.brieffo.app.data.Match
+import com.brieffo.app.data.Prefs
 import com.brieffo.app.data.Sport
 import com.brieffo.app.data.WxAlert
 import com.brieffo.app.data.durationText
+import com.brieffo.app.notify.MatchReminder
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
@@ -165,7 +181,55 @@ private fun MatchHero(label: String, m: Match) {
                 Text(it, fontSize = 12.sp, color = p.sub, modifier = Modifier.padding(start = 4.dp))
             }
         }
+        if (!m.live && m.date?.isAfter(LocalDateTime.now()) == true) ReminderButton(m)
     }
+}
+
+/** Accende o toglie il promemoria della partita: una notifica poco prima dell'inizio. */
+@Composable
+private fun ReminderButton(m: Match) {
+    val p = LocalPalette.current
+    val context = LocalContext.current
+    val prefs = remember { Prefs(context) }
+    var reminder by remember { mutableStateOf(prefs.matchReminder) }
+    var denied by remember { mutableStateOf(false) }
+    val active = reminder == MatchReminder.key(m)
+    fun turnOn() {
+        MatchReminder.schedule(context, m)
+        reminder = prefs.matchReminder
+        denied = false
+    }
+    val askNotifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) turnOn() else denied = true
+    }
+    // Partita spostata: il promemoria già acceso segue il nuovo orario.
+    LaunchedEffect(m.date) { if (MatchReminder.moved(reminder, m)) turnOn() }
+
+    OutlinedButton(
+        onClick = {
+            val allowed = Build.VERSION.SDK_INT < 33 ||
+                ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+            when {
+                active -> {
+                    MatchReminder.cancel(context)
+                    reminder = ""
+                }
+                allowed -> turnOn()
+                else -> askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        },
+        modifier = Modifier.padding(top = 12.dp),
+    ) {
+        Icon(if (active) Icons.Rounded.NotificationsActive else Icons.Rounded.NotificationsNone, null, Modifier.size(18.dp), tint = p.accent)
+        Text(
+            if (active) "Promemoria attivo · tocca per toglierlo" else "Avvisami ${MatchReminder.MINUTES_BEFORE} minuti prima",
+            color = p.accent, modifier = Modifier.padding(start = 8.dp),
+        )
+    }
+    if (denied) Text(
+        "Per il promemoria consenti le notifiche a Brieffo dalle impostazioni di Android.",
+        fontSize = 12.sp, color = p.sub, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 6.dp),
+    )
 }
 
 /** Riga compatta: stemma dell'avversario, competizione e, a destra, risultato oppure data. */

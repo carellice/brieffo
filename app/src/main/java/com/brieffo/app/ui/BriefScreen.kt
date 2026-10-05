@@ -2,6 +2,7 @@ package com.brieffo.app.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -40,12 +41,16 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -75,6 +80,9 @@ class BriefActions(
 @Composable
 fun BriefScreen(s: BriefState, actions: BriefActions, scroll: ScrollState = rememberScrollState()) {
     val p = LocalPalette.current
+    // Dove comincia ogni scheda nella pagina (pixel) e quanto è alta: serve all'indice laterale.
+    val bounds = remember { mutableStateMapOf<String, Pair<Int, Int>>() }
+    var shown by remember { mutableStateOf(emptyList<String>()) }
     PullToRefreshBox(isRefreshing = s.loading, onRefresh = actions.refresh, modifier = Modifier.fillMaxSize().statusBarsPadding()) {
         Column(
             Modifier
@@ -116,20 +124,30 @@ fun BriefScreen(s: BriefState, actions: BriefActions, scroll: ScrollState = reme
                 CardKeys.OCCASIONS to { OccasionsCard(s, actions.grantContacts) },
                 CardKeys.EXTRAS to { ExtrasCard(s.onThisDay, s.moon, s.battery, s.nextAlarm) },
             )
-            // L'ordine segue il momento della giornata: al mattino si guarda avanti, la sera si tira il bilancio.
-            val order = with(CardKeys) {
+            // Senza un ordine scelto a mano si segue il momento della giornata: al mattino si guarda avanti, la sera si tira il bilancio.
+            val order = if (s.cardOrder.isNotEmpty()) CardKeys.ordered(s.cardOrder) else with(CardKeys) {
                 when (s.daypart) {
                     Daypart.MORNING -> listOf(WEATHER, TRAVEL, AGENDA, HEALTH, NEWS, SPORT, OCCASIONS, MARKETS, EXTRAS, USAGE)
                     Daypart.MIDDAY -> listOf(AGENDA, TRAVEL, WEATHER, HEALTH, NEWS, SPORT, MARKETS, USAGE, OCCASIONS, EXTRAS)
                     Daypart.EVENING, Daypart.NIGHT -> listOf(HEALTH, USAGE, AGENDA, WEATHER, SPORT, NEWS, MARKETS, OCCASIONS, EXTRAS)
                 }
             }
-            val cards = listOf<@Composable () -> Unit>({ SummaryCard(s) }) + order.filter { s.shows(it) }.map { all.getValue(it) }
-            cards.forEachIndexed { i, card -> Appear(i) { card() } }
+            val keys = listOf(SUMMARY_SECTION) + order.filter { s.shows(it) }
+            SideEffect { if (shown != keys) shown = keys }
+            keys.forEachIndexed { i, key ->
+                Box(Modifier.onGloballyPositioned { c -> bounds[key] = c.positionInParent().y.toInt() to c.size.height }) {
+                    Appear(i) { if (key == SUMMARY_SECTION) SummaryCard(s) else all.getValue(key)() }
+                }
+            }
 
             // Spazio per la barra di navigazione fluttuante.
             Spacer(Modifier.height(NavBarSpace))
         }
+        // Le schede che in questo momento non mostrano nulla non entrano nell'indice.
+        val sections = shown.mapNotNull { key ->
+            bounds[key]?.takeIf { it.second > 0 }?.let { Section(key, sectionLabel(key), sectionIcon(key), it.first) }
+        }
+        SectionRail(sections, scroll, Modifier.align(Alignment.CenterStart).padding(bottom = NavBarSpace / 2))
     }
 }
 

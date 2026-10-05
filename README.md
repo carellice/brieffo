@@ -53,14 +53,22 @@ Anche i colori seguono l'ora: chiari e caldi al mattino, scuri e profondi la ser
 | **Ricorrenze** | Santi del giorno, compleanni dei contatti, prossima festività. |
 | **In breve** | Fase lunare, batteria, prossima sveglia e un "accadde oggi". |
 
-Ogni scheda si può nascondere. Quelle spente non scaricano dati.
+Ogni scheda si può nascondere. Quelle spente non scaricano dati. L'ordine segue il momento
+della giornata oppure, se preferisci, lo decidi tu dalle impostazioni.
 
 ## Pensata per essere tua
 
 - **Presentazione guidata** al primo avvio: nome, città, permessi, schede, squadra e notifica in sette passi, tutti facoltativi.
-- **Calendari a scelta**: accendi solo quelli che vuoi vedere, compresi quelli che Android non scarica da solo.
+- **Calendari a scelta**: accendi solo quelli che vuoi vedere, compresi quelli che Android non scarica da solo, e forza la sincronizzazione quando vuoi con *Sincronizza ora*.
+- **Indice laterale**: i puntini sul bordo sinistro mostrano a che punto sei; appoggia il dito e diventano una colonna di icone, tocca o scorri per saltare da una scheda all'altra.
+- **Riepilogo richiudibile**: quello scritto da Gemini si apre e si chiude con un tocco, e può partire già chiuso.
+- **Ordine delle schede**: automatico oppure sistemato a mano, una scheda alla volta.
 - **Ricerca della squadra** con campionato, per non confondere due squadre con lo stesso nome.
 - **Notifica giornaliera** con il riepilogo, all'ora che decidi.
+- **Promemoria della partita**: un tocco sulla prossima gara e ricevi una notifica 30 minuti prima dell'inizio.
+- **Riepilogo da ascoltare**: un tocco su *Ascolta* e te lo legge una voce che gira tutta sul telefono, gratuita e senza limiti (si scarica una volta, circa 64 MB). In alternativa una voce di Gemini o quella di Android; velocità e voce a scelta.
+- **Aggiornamento misurato**: il brief si ricarica da solo ogni quattro ore; quando vuoi dati freschi, trascina verso il basso.
+- **Backup della configurazione**: esporta tutto in un file e importalo sul telefono nuovo.
 - **Icone disegnate su misura** per il meteo e la fase lunare.
 
 ## Riepilogo con l'intelligenza artificiale
@@ -76,8 +84,9 @@ AI Studio. La guida passo passo è nelle impostazioni, alla voce *Riepilogo con 
 - **Calendario, contatti, salute e tempo di utilizzo restano sul telefono.**
 - **La posizione** viene arrotondata a circa un chilometro e usata per meteo, allerte e percorsi.
 - **Sola lettura**: Brieffo non crea né modifica eventi, e non scrive dati di salute.
-- **Con Gemini attivo** meteo, titoli degli impegni e dati di attività vengono inviati a Google
-  per scrivere il riepilogo. Senza chiave non viene inviato nulla di tutto questo.
+- **Con Gemini attivo** i dati delle schede accese (meteo, impegni con luogo, spostamenti, attività,
+  app più usate, squadra, titoli delle notizie, mercati, nomi dei compleanni) vengono inviati a Google
+  per scrivere il riepilogo. Le schede spente restano fuori; senza chiave non viene inviato nulla.
 
 ### Permessi
 
@@ -89,7 +98,7 @@ Sono tutti facoltativi: ciò che non consenti resta semplicemente vuoto.
 | Calendario (lettura) | Impegni di oggi e domani |
 | Calendario (modifica) | Solo per chiedere ad Android di scaricare i calendari che accendi |
 | Contatti | Compleanni in arrivo |
-| Notifiche | Brief giornaliero |
+| Notifiche | Brief giornaliero e promemoria della partita |
 | Health Connect | Passi, sonno, battito, calorie, distanza |
 | Accesso ai dati di utilizzo | Tempo passato al telefono |
 

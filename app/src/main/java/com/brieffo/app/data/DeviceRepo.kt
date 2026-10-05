@@ -142,6 +142,22 @@ object CalendarRepo {
         }.getOrDefault(false)
     }
 
+    /**
+     * Chiede ad Android di sincronizzare subito gli account dei calendari indicati, come "Aggiorna" in Google Calendar.
+     * Restituisce quanti account sono stati avviati; i calendari salvati solo sul telefono non hanno nulla da sincronizzare.
+     */
+    fun forceSync(calendars: List<CalendarInfo>): Int {
+        val accounts = calendars
+            .filter { it.account.isNotBlank() && it.accountType.isNotBlank() && it.accountType != CalendarContract.ACCOUNT_TYPE_LOCAL }
+            .map { Account(it.account, it.accountType) }
+            .distinct()
+        val extras = Bundle().apply {
+            putBoolean(ContentResolver.SYNC_EXTRAS_MANUAL, true)
+            putBoolean(ContentResolver.SYNC_EXTRAS_EXPEDITED, true)
+        }
+        return accounts.count { runCatching { ContentResolver.requestSync(it, CalendarContract.AUTHORITY, extras) }.isSuccess }
+    }
+
     /** Senza una scelta esplicita vale quella di Google Calendar: visibile e sincronizzato. */
     fun isSelected(c: CalendarInfo, on: Set<String>, off: Set<String>) = when (c.id.toString()) {
         in on -> true

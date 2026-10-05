@@ -12,15 +12,17 @@ android {
         applicationId = "com.brieffo.app"
         minSdk = 28
         targetSdk = 36
-        versionCode = 2
-        versionName = "1.1"
+        // La voce locale porta con sé librerie native pesanti: si includono solo quelle dei telefoni attuali.
+        ndk { abiFilters += "arm64-v8a" }
+        versionCode = 7
+        versionName = "1.6"
     }
 
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfig = signingConfigs.getByName("debug")
         }
     }
@@ -30,6 +32,8 @@ android {
     }
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true }
+    // Di sherpa-onnx serve solo il ponte verso Kotlin: le interfacce C e C++ restano fuori dall'APK.
+    packaging { jniLibs { excludes += listOf("**/libsherpa-onnx-c-api.so", "**/libsherpa-onnx-cxx-api.so") } }
 }
 
 dependencies {
@@ -45,4 +49,7 @@ dependencies {
     implementation("androidx.health.connect:connect-client:1.1.0")
     implementation("androidx.work:work-runtime-ktx:2.10.5")
     implementation("io.coil-kt:coil-compose:2.7.0")
+    // Voce locale: sherpa-onnx fa girare sul telefono i modelli Piper, commons-compress ne scompatta l'archivio.
+    implementation("com.github.k2-fsa.sherpa-onnx:sherpa-onnx:v1.13.8")
+    implementation("org.apache.commons:commons-compress:1.27.1")
 }

@@ -80,6 +80,11 @@ class Prefs(ctx: Context) {
         get() = sp.getStringSet("hidden", emptySet()) ?: emptySet()
         set(v) = sp.edit { putStringSet("hidden", v) }
 
+    /** Ordine delle schede scelto dall'utente (chiavi di CardKeys); vuoto = segue il momento della giornata. */
+    var cardOrder: List<String>
+        get() = (sp.getString("cardOrder", "") ?: "").split(',').filter { it.isNotBlank() }
+        set(v) = sp.edit { putString("cardOrder", v.joinToString(",")) }
+
     /** Calendari accesi o spenti a mano dall'utente (id); gli altri seguono la scelta fatta in Google Calendar. */
     var calendarsOn: Set<String>
         get() = sp.getStringSet("calendarsOn", emptySet()) ?: emptySet()
@@ -108,6 +113,43 @@ class Prefs(ctx: Context) {
         get() = sp.getString("teamRef", "") ?: ""
         set(v) = sp.edit { putString("teamRef", v) }
 
+    /** Partita per cui è in attesa un promemoria (chiave di MatchReminder); vuoto = nessuno. */
+    var matchReminder: String
+        get() = sp.getString("matchReminder", "") ?: ""
+        set(v) = sp.edit { putString("matchReminder", v) }
+
+    /** Velocità della lettura ad alta voce, in percentuale: 100 = normale. */
+    var speechSpeed: Int
+        get() = sp.getInt("speechSpeed", 100)
+        set(v) = sp.edit { putInt("speechSpeed", v.coerceIn(60, 160)) }
+
+    /** Vero se il riepilogo di Gemini parte chiuso, con solo le prime righe in vista. */
+    var summaryCollapsed: Boolean
+        get() = sp.getBoolean("summaryCollapsed", false)
+        set(v) = sp.edit { putBoolean("summaryCollapsed", v) }
+
+    /** Chi legge il riepilogo: "local" (voce sul telefono, gratuita), "gemini" oppure "phone" (sintesi di Android). */
+    var speechEngine: String
+        get() = sp.getString("speechEngine", "local") ?: "local"
+        set(v) = sp.edit { putString("speechEngine", v) }
+
+    /** Voce locale scelta (una di LocalVoice.VOICES). */
+    var localVoice: String
+        get() = sp.getString("localVoice", LocalVoice.VOICES.first().id) ?: LocalVoice.VOICES.first().id
+        set(v) = sp.edit { putString("localVoice", v) }
+
+    /** Ultimo riepilogo scritto da Gemini e quando (millisecondi): si riusa finché è recente, per non consumare richieste. */
+    var aiSummary: String
+        get() = sp.getString("aiSummary", "") ?: ""
+        set(v) = sp.edit { putString("aiSummary", v).putLong("aiSummaryAt", System.currentTimeMillis()) }
+
+    val aiSummaryAt: Long get() = sp.getLong("aiSummaryAt", 0)
+
+    /** Voce di Gemini scelta per la lettura (una di Summary.VOICES). */
+    var speechVoice: String
+        get() = sp.getString("speechVoice", "Kore") ?: "Kore"
+        set(v) = sp.edit { putString("speechVoice", v) }
+
     var workAddress: String
         get() = sp.getString("workAddress", "") ?: ""
         set(v) = sp.edit { putString("workAddress", v.trim()) }
@@ -124,4 +166,45 @@ class Prefs(ctx: Context) {
     var lastPlaceCity: String
         get() = sp.getString("placeCity", "") ?: ""
         set(v) = sp.edit { putString("placeCity", v) }
+
+    /**
+     * Tutta la configurazione in un testo JSON, da portare su un altro telefono. Restano fuori i dati legati
+     * a questo telefono: la scelta dei calendari (i loro id cambiano), l'ultima posizione, la cache e i permessi.
+     */
+    fun export(): String {
+        val values = JSONObject()
+        sp.all.forEach { (k, v) ->
+            when {
+                v == null -> Unit
+                k in BACKUP_STRINGS || k in BACKUP_INTS || k in BACKUP_BOOLEANS -> values.put(k, v)
+                k in BACKUP_SETS -> values.put(k, JSONArray((v as? Set<*>).orEmpty().toList()))
+            }
+        }
+        return JSONObject().put("app", BACKUP_APP).put("version", 1).put("settings", values).toString(2)
+    }
+
+    /** Applica una configurazione creata da [export]; le voci assenti o di tipo sbagliato restano come sono. Falso se il testo non è un backup di Brieffo. */
+    fun import(json: String): Boolean {
+        val values = runCatching { JSONObject(json).takeIf { it.optString("app") == BACKUP_APP }?.optJSONObject("settings") }.getOrNull() ?: return false
+        sp.edit {
+            values.keys().forEach { k ->
+                val v = values.get(k)
+                when {
+                    k in BACKUP_STRINGS && v is String -> putString(k, v)
+                    k in BACKUP_INTS && v is Int -> putInt(k, v)
+                    k in BACKUP_BOOLEANS && v is Boolean -> putBoolean(k, v)
+                    k in BACKUP_SETS && v is JSONArray -> putStringSet(k, (0 until v.length()).map { v.optString(it) }.toSet())
+                }
+            }
+        }
+        return true
+    }
+
+    private companion object {
+        const val BACKUP_APP = "brieffo"
+        val BACKUP_STRINGS = setOf("name", "city", "geminiKey", "feeds", "themeMode", "team", "teamRef", "workAddress", "travelMode", "cardOrder", "speechVoice", "speechEngine", "localVoice")
+        val BACKUP_INTS = setOf("stepGoal", "notifyHour", "notifyMinute", "accent", "speechSpeed")
+        val BACKUP_BOOLEANS = setOf("notifyEnabled", "summaryCollapsed")
+        val BACKUP_SETS = setOf("hidden")
+    }
 }

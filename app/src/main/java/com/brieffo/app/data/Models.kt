@@ -181,6 +181,12 @@ object CardKeys {
     const val MARKETS = "markets"; const val TRAVEL = "travel"; const val SPORT = "sport"
     const val OCCASIONS = "occasions"; const val EXTRAS = "extras"
 
+    /** Schede che si possono riordinare, nell'ordine proposto a chi inizia a sistemarle a mano. */
+    val sortable = listOf(WEATHER, AGENDA, TRAVEL, HEALTH, USAGE, NEWS, SPORT, MARKETS, OCCASIONS, EXTRAS)
+
+    /** Ordine completo a partire da quello salvato: via le chiavi sconosciute, in coda le schede che mancano. */
+    fun ordered(saved: List<String>) = saved.filter { it in sortable }.distinct().let { it + (sortable - it.toSet()) }
+
     val labels = linkedMapOf(
         WEATHER to "Meteo", ALERTS to "Allerte meteo", POLLEN to "Pollini",
         AGENDA to "Agenda",
@@ -198,6 +204,10 @@ data class BriefState(
     val stepGoal: Int = 8000,
     val summary: String = "",
     val summaryByAi: Boolean = false,
+    /** Vero mentre Gemini sta scrivendo il riepilogo. */
+    val summaryLoading: Boolean = false,
+    /** Vero se il riepilogo di Gemini va mostrato chiuso finché l'utente non lo apre. */
+    val summaryCollapsed: Boolean = false,
     val aiError: String? = null,
     val weather: Weather? = null,
     val weatherLoaded: Boolean = false,
@@ -215,6 +225,8 @@ data class BriefState(
     val moon: Moon? = null,
     val battery: Battery? = null,
     val hidden: Set<String> = emptySet(),
+    /** Ordine delle schede scelto dall'utente; vuoto = segue il momento della giornata. */
+    val cardOrder: List<String> = emptyList(),
     val alerts: List<WxAlert> = emptyList(),
     val travel: List<Travel> = emptyList(),
     val travelConfigured: Boolean = false,
