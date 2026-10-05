@@ -190,6 +190,7 @@ fun SettingsScreen(
     val time = rememberTimePickerState(prefs.notifyHour, prefs.notifyMinute, is24Hour = true)
     var key by remember { mutableStateOf(prefs.geminiKey) }
     var collapsed by remember { mutableStateOf(prefs.summaryCollapsed) }
+    var railRight by remember { mutableStateOf(prefs.railRight) }
     var testingKey by remember { mutableStateOf(false) }
     var keyTest by remember { mutableStateOf<String?>(null) }
     var calOn by remember { mutableStateOf(prefs.calendarsOn) }
@@ -233,6 +234,7 @@ fun SettingsScreen(
         prefs.notifyMinute = time.minute
         prefs.geminiKey = key
         prefs.summaryCollapsed = collapsed
+        prefs.railRight = railRight
         prefs.calendarsOn = calOn
         prefs.calendarsOff = calOff
     }
@@ -265,6 +267,7 @@ fun SettingsScreen(
                 time.minute = prefs.notifyMinute
                 key = prefs.geminiKey
                 collapsed = prefs.summaryCollapsed
+                railRight = prefs.railRight
                 speechSpeed = prefs.speechSpeed
                 speechVoice = prefs.speechVoice
                 speechEngine = prefs.speechEngine
@@ -308,6 +311,13 @@ fun SettingsScreen(
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf("system" to "Automatico", "light" to "Chiaro", "dark" to "Scuro").forEach { (value, label) ->
                     FilterChip(selected = themeMode == value, onClick = { onTheme(value) }, label = { Text(label) })
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            Note("Indice delle schede (i puntini sul bordo del brief)")
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(false to "A sinistra", true to "A destra").forEach { (value, label) ->
+                    FilterChip(selected = railRight == value, onClick = { railRight = value }, label = { Text(label) })
                 }
             }
             Spacer(Modifier.height(10.dp))

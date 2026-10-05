@@ -208,6 +208,8 @@ data class BriefState(
     val summaryLoading: Boolean = false,
     /** Vero se il riepilogo di Gemini va mostrato chiuso finché l'utente non lo apre. */
     val summaryCollapsed: Boolean = false,
+    /** Vero se l'indice laterale delle schede sta a destra invece che a sinistra. */
+    val railRight: Boolean = false,
     val aiError: String? = null,
     val weather: Weather? = null,
     val weatherLoaded: Boolean = false,

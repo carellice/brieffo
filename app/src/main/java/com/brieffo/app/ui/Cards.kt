@@ -11,6 +11,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.ui.draw.rotate
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -140,17 +141,34 @@ internal fun ActionButton(text: String, onClick: () -> Unit) {
     ) { Text(text) }
 }
 
-/** Righe segnaposto che pulsano al posto del testo, alte quanto le righe del riepilogo. */
+/**
+ * Segnaposto mostrato mentre Gemini scrive: le righe si riempiono una dopo l'altra, da sinistra a destra,
+ * con un cursore in punta, come un testo che viene battuto; poi si ricomincia.
+ */
 @Composable
 private fun SummarySkeleton() {
     val p = LocalPalette.current
-    val pulse by rememberInfiniteTransition(label = "skeleton").animateFloat(
-        initialValue = 0.10f, targetValue = 0.24f,
-        animationSpec = infiniteRepeatable(tween(850), RepeatMode.Reverse), label = "alpha",
+    val widths = listOf(1f, 0.92f, 0.97f, 0.6f)
+    val transition = rememberInfiniteTransition(label = "skeleton")
+    // Da 0 al numero di righe si scrive; l'ultimo tratto è una pausa a righe piene prima di ricominciare.
+    val written by transition.animateFloat(
+        initialValue = 0f, targetValue = widths.size + 0.8f,
+        animationSpec = infiniteRepeatable(tween(2600, easing = LinearEasing), RepeatMode.Restart), label = "written",
+    )
+    val blink by transition.animateFloat(
+        initialValue = 1f, targetValue = 0.25f,
+        animationSpec = infiniteRepeatable(tween(420), RepeatMode.Reverse), label = "cursor",
     )
     Column(verticalArrangement = Arrangement.spacedBy(11.dp), modifier = Modifier.padding(vertical = 5.dp)) {
-        listOf(1f, 0.94f, 0.98f, 0.62f).forEach { width ->
-            Box(Modifier.fillMaxWidth(width).height(16.dp).background(p.text.copy(alpha = pulse), RoundedCornerShape(8.dp)))
+        widths.forEachIndexed { i, width ->
+            val done = (written - i).coerceIn(0f, 1f)
+            Box(Modifier.fillMaxWidth(width).height(16.dp).background(p.text.copy(alpha = 0.09f), RoundedCornerShape(8.dp))) {
+                if (done > 0f) Box(Modifier.fillMaxWidth(done).height(16.dp).background(p.text.copy(alpha = 0.22f), RoundedCornerShape(8.dp))) {
+                    if (done < 1f) Box(
+                        Modifier.align(Alignment.CenterEnd).size(4.dp, 16.dp).background(p.accent.copy(alpha = blink), RoundedCornerShape(2.dp))
+                    )
+                }
+            }
         }
     }
 }
@@ -180,8 +198,8 @@ fun SummaryCard(s: BriefState) {
         },
         icon = Icons.Rounded.AutoAwesome,
     ) {
-        // Aggiornando un riepilogo già scritto da Gemini resta visibile il testo di prima.
-        val skeleton = s.summaryLoading && !s.summaryByAi
+        // Finché Gemini scrive si vede sempre il segnaposto animato, anche se c'era già un riepilogo.
+        val skeleton = s.summaryLoading
         when {
             skeleton -> SummarySkeleton()
             s.summaryByAi -> {
@@ -220,7 +238,7 @@ fun SummaryCard(s: BriefState) {
                 color = if (s.summary.isEmpty()) p.sub else p.text,
             )
         }
-        if (s.aiError != null) {
+        if (s.aiError != null && !skeleton) {
             Text("Gemini non ha risposto (${s.aiError}): questo è il riepilogo dell'app.", fontSize = 12.sp, color = p.sub, modifier = Modifier.padding(top = 10.dp))
         }
         if (!skeleton && s.summary.isNotEmpty()) {

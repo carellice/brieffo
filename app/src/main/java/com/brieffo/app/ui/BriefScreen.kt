@@ -147,7 +147,7 @@ fun BriefScreen(s: BriefState, actions: BriefActions, scroll: ScrollState = reme
         val sections = shown.mapNotNull { key ->
             bounds[key]?.takeIf { it.second > 0 }?.let { Section(key, sectionLabel(key), sectionIcon(key), it.first) }
         }
-        SectionRail(sections, scroll, Modifier.align(Alignment.CenterStart).padding(bottom = NavBarSpace / 2))
+        SectionRail(sections, scroll, s.railRight, Modifier.align(if (s.railRight) Alignment.CenterEnd else Alignment.CenterStart).padding(bottom = NavBarSpace / 2))
     }
 }
 

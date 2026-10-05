@@ -80,6 +80,7 @@ class BriefViewModel(app: Application) : AndroidViewModel(app) {
                     hidden = hidden,
                     cardOrder = prefs.cardOrder,
                     summaryCollapsed = prefs.summaryCollapsed,
+                    railRight = prefs.railRight,
                     travelConfigured = prefs.workAddress.isNotBlank(),
                     sportConfigured = prefs.team.isNotBlank() || prefs.teamRef.isNotBlank(),
                     newsConfigured = prefs.feeds.any { f -> f.enabled },

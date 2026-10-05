@@ -83,12 +83,12 @@ fun sectionIcon(key: String): ImageVector = when (key) {
 private val Slot = 30.dp
 
 /**
- * Indice delle schede sul bordo sinistro. A riposo è una fila di puntini nel margine, con quello della scheda
+ * Indice delle schede su un bordo dello schermo, sinistro o destro ([right]) a scelta dell'utente. A riposo è una fila di puntini nel margine, con quello della scheda
  * che si sta leggendo più lungo e colorato. Appoggiando il dito si apre in una colonna di icone con il nome
  * della scheda accanto: un tocco porta lì, e scorrendo il dito su e giù si sfoglia tutto il brief.
  */
 @Composable
-fun SectionRail(sections: List<Section>, scroll: ScrollState, modifier: Modifier = Modifier) {
+fun SectionRail(sections: List<Section>, scroll: ScrollState, right: Boolean, modifier: Modifier = Modifier) {
     if (sections.size < 2) return
     val p = LocalPalette.current
     val density = LocalDensity.current
@@ -112,80 +112,86 @@ fun SectionRail(sections: List<Section>, scroll: ScrollState, modifier: Modifier
     val reveal by animateFloatAsState(if (open) 1f else 0f, spring(stiffness = 500f), label = "reveal")
     val bubbleY by animateDpAsState(Slot * active, spring(dampingRatio = 0.85f, stiffness = 700f), label = "bubble")
 
-    Row(modifier, verticalAlignment = Alignment.Top) {
-        Box(
-            Modifier
-                .padding(vertical = 6.dp)
-                .width(width)
-                .height(Slot * sections.size)
-                .graphicsLayer { shadowElevation = 18f * reveal; shape = RoundedCornerShape(23.dp); clip = false }
-                .background(p.bottom.copy(alpha = 0.94f * reveal), RoundedCornerShape(23.dp))
-                .border(1.dp, p.stroke.copy(alpha = p.stroke.alpha * reveal), RoundedCornerShape(23.dp))
-                .semantics { contentDescription = "Indice delle schede" }
-                .pointerInput(Unit) {
-                    val slot = Slot.toPx()
-                    var job: Job? = null
-                    fun go(y: Float) {
-                        val i = (y / slot).toInt().coerceIn(0, current.lastIndex)
-                        if (i == picked && job != null) return
-                        if (i != picked) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        picked = i
-                        // La scheda si ferma poco sotto il bordo, così si vede che comincia lì.
-                        val target = (current[i].top - with(density) { 12.dp.roundToPx() }).coerceIn(0, scroll.maxValue)
-                        job?.cancel()
-                        job = scope.launch { scroll.animateScrollTo(target, spring(dampingRatio = 0.9f, stiffness = 260f)) }
-                    }
-                    awaitEachGesture {
-                        val down = awaitFirstDown()
-                        down.consume()
-                        job = null
-                        picked = reading
-                        open = true
-                        go(down.position.y)
-                        while (true) {
-                            val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: break
-                            if (!change.pressed) break
-                            change.consume()
-                            go(change.position.y)
+    val rail: @Composable () -> Unit = {
+            Box(
+                Modifier
+                    .padding(vertical = 6.dp)
+                    .width(width)
+                    .height(Slot * sections.size)
+                    .graphicsLayer { shadowElevation = 18f * reveal; shape = RoundedCornerShape(23.dp); clip = false }
+                    .background(p.bottom.copy(alpha = 0.94f * reveal), RoundedCornerShape(23.dp))
+                    .border(1.dp, p.stroke.copy(alpha = p.stroke.alpha * reveal), RoundedCornerShape(23.dp))
+                    .semantics { contentDescription = "Indice delle schede" }
+                    .pointerInput(Unit) {
+                        val slot = Slot.toPx()
+                        var job: Job? = null
+                        fun go(y: Float) {
+                            val i = (y / slot).toInt().coerceIn(0, current.lastIndex)
+                            if (i == picked && job != null) return
+                            if (i != picked) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            picked = i
+                            // La scheda si ferma poco sotto il bordo, così si vede che comincia lì.
+                            val target = (current[i].top - with(density) { 12.dp.roundToPx() }).coerceIn(0, scroll.maxValue)
+                            job?.cancel()
+                            job = scope.launch { scroll.animateScrollTo(target, spring(dampingRatio = 0.9f, stiffness = 260f)) }
                         }
-                        open = false
-                    }
-                },
-        ) {
-            Column {
-                sections.forEachIndexed { i, section ->
-                    val on = i == active
-                    val dotHeight by animateDpAsState(if (on) 16.dp else 5.dp, spring(dampingRatio = 0.7f, stiffness = 600f), label = "dot")
-                    Box(Modifier.width(width).height(Slot), contentAlignment = Alignment.Center) {
-                        Box(
-                            Modifier
-                                .graphicsLayer { alpha = 1f - reveal }
-                                .size(5.dp, dotHeight)
-                                .background(if (on) p.accent else p.sub.copy(alpha = 0.45f), CircleShape)
-                        )
-                        Box(
-                            Modifier
-                                .graphicsLayer { alpha = reveal; scaleX = 0.6f + 0.4f * reveal; scaleY = 0.6f + 0.4f * reveal }
-                                .size(26.dp)
-                                .background(if (on) p.accent else p.accent.copy(alpha = 0f), CircleShape),
-                            contentAlignment = Alignment.Center,
-                        ) { Icon(section.icon, null, Modifier.size(16.dp), tint = if (on) p.onAccent else p.sub) }
+                        awaitEachGesture {
+                            val down = awaitFirstDown()
+                            down.consume()
+                            job = null
+                            picked = reading
+                            open = true
+                            go(down.position.y)
+                            while (true) {
+                                val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: break
+                                if (!change.pressed) break
+                                change.consume()
+                                go(change.position.y)
+                            }
+                            open = false
+                        }
+                    },
+            ) {
+                Column {
+                    sections.forEachIndexed { i, section ->
+                        val on = i == active
+                        val dotHeight by animateDpAsState(if (on) 16.dp else 5.dp, spring(dampingRatio = 0.7f, stiffness = 600f), label = "dot")
+                        Box(Modifier.width(width).height(Slot), contentAlignment = Alignment.Center) {
+                            Box(
+                                Modifier
+                                    .graphicsLayer { alpha = 1f - reveal }
+                                    .size(5.dp, dotHeight)
+                                    .background(if (on) p.accent else p.sub.copy(alpha = 0.45f), CircleShape)
+                            )
+                            Box(
+                                Modifier
+                                    .graphicsLayer { alpha = reveal; scaleX = 0.6f + 0.4f * reveal; scaleY = 0.6f + 0.4f * reveal }
+                                    .size(26.dp)
+                                    .background(if (on) p.accent else p.accent.copy(alpha = 0f), CircleShape),
+                                contentAlignment = Alignment.Center,
+                            ) { Icon(section.icon, null, Modifier.size(16.dp), tint = if (on) p.onAccent else p.sub) }
+                        }
                     }
                 }
             }
-        }
-        // Il nome della scheda scelta segue il dito accanto all'indice.
-        Box(
-            Modifier
-                .padding(start = 8.dp, top = 6.dp)
-                .offset(y = bubbleY)
-                .height(Slot)
-                .graphicsLayer { alpha = reveal; translationX = (reveal - 1f) * 24f },
-            contentAlignment = Alignment.CenterStart,
-        ) {
-            Box(Modifier.background(p.accent, RoundedCornerShape(15.dp)).padding(horizontal = 12.dp, vertical = 4.dp)) {
-                Text(sections[active].label, fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold, color = p.onAccent, maxLines = 1, softWrap = false)
+    }
+    val label: @Composable () -> Unit = {
+            // Il nome della scheda scelta segue il dito accanto all'indice.
+            Box(
+                Modifier
+                    .padding(start = if (right) 0.dp else 8.dp, end = if (right) 8.dp else 0.dp, top = 6.dp)
+                    .offset(y = bubbleY)
+                    .height(Slot)
+                    .graphicsLayer { alpha = reveal; translationX = (reveal - 1f) * 24f * (if (right) -1f else 1f) },
+                contentAlignment = if (right) Alignment.CenterEnd else Alignment.CenterStart,
+            ) {
+                Box(Modifier.background(p.accent, RoundedCornerShape(15.dp)).padding(horizontal = 12.dp, vertical = 4.dp)) {
+                    Text(sections[active].label, fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold, color = p.onAccent, maxLines = 1, softWrap = false)
+                }
             }
-        }
+    }
+    // A destra tutto si specchia: l'indice sul bordo, il nome della scheda verso l'interno.
+    Row(modifier, verticalAlignment = Alignment.Top) {
+        if (right) { label(); rail() } else { rail(); label() }
     }
 }

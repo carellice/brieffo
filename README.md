@@ -60,7 +60,7 @@ della giornata oppure, se preferisci, lo decidi tu dalle impostazioni.
 
 - **Presentazione guidata** al primo avvio: nome, città, permessi, schede, squadra e notifica in sette passi, tutti facoltativi.
 - **Calendari a scelta**: accendi solo quelli che vuoi vedere, compresi quelli che Android non scarica da solo, e forza la sincronizzazione quando vuoi con *Sincronizza ora*.
-- **Indice laterale**: i puntini sul bordo sinistro mostrano a che punto sei; appoggia il dito e diventano una colonna di icone, tocca o scorri per saltare da una scheda all'altra.
+- **Indice laterale**: i puntini sul bordo (sinistro o destro, a scelta) mostrano a che punto sei; appoggia il dito e diventano una colonna di icone, tocca o scorri per saltare da una scheda all'altra.
 - **Riepilogo richiudibile**: quello scritto da Gemini si apre e si chiude con un tocco, e può partire già chiuso.
 - **Ordine delle schede**: automatico oppure sistemato a mano, una scheda alla volta.
 - **Ricerca della squadra** con campionato, per non confondere due squadre con lo stesso nome.
