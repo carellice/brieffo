@@ -111,7 +111,7 @@ Serve [Android Studio](https://developer.android.com/studio) installato su un Ma
 
 | Script | Cosa fa |
 | --- | --- |
-| `Genera APK.command` | Doppio click: compila e crea `Brieffo.apk` nella cartella del progetto |
+| `Genera APK.command` | Doppio click: aumenta la versione, compila `Brieffo.apk` e lo pubblica come release su GitHub (richiede [GitHub CLI](https://cli.github.com)), cancellando le release precedenti |
 | `Installa sul telefono.command` | Doppio click: compila e installa sul telefono collegato via USB con Debug USB attivo |
 
 In alternativa, da terminale:
