@@ -1,0 +1,5 @@
+<resources>
+    <style name="Theme.Brieffo" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#101226</item>
+    </style>
+</resources>
