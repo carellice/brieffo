@@ -11,10 +11,13 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.work.CoroutineWorker
-import androidx.work.ExistingPeriodicWorkPolicy
-import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.ExistingWorkPolicy
+import androidx.work.ForegroundInfo
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.OutOfQuotaPolicy
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import androidx.work.workDataOf
 import com.brieffo.app.MainActivity
 import com.brieffo.app.R
 import com.brieffo.app.data.BriefState
@@ -27,9 +30,8 @@ import com.brieffo.app.data.Summary
 import com.brieffo.app.data.WeatherRepo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.time.Duration
 import java.time.LocalDateTime
-import java.util.concurrent.TimeUnit
+import java.time.ZoneId
 
 /** Prepara il brief in background e lo mostra come notifica all'ora scelta. */
 class BriefWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, params) {
@@ -37,7 +39,7 @@ class BriefWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx,
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         val ctx = applicationContext
         val prefs = Prefs(ctx)
-        if (!prefs.notifyEnabled) return@withContext Result.success()
+        if (!prefs.notifyEnabled && !inputData.getBoolean("test", false)) return@withContext Result.success()
         if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             return@withContext Result.success()
         }
@@ -64,6 +66,15 @@ class BriefWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx,
         Result.success()
     }
 
+    /** Sulle versioni di Android precedenti alla 12 un lavoro urgente deve mostrare una notifica mentre gira. */
+    override suspend fun getForegroundInfo(): ForegroundInfo {
+        val nm = applicationContext.getSystemService(NotificationManager::class.java)
+        nm.createNotificationChannel(NotificationChannel(CHANNEL, "Brief giornaliero", NotificationManager.IMPORTANCE_DEFAULT))
+        val n = NotificationCompat.Builder(applicationContext, CHANNEL)
+            .setSmallIcon(R.drawable.ic_stat_brief).setContentTitle("Preparo il brief…").build()
+        return ForegroundInfo(3, n)
+    }
+
     companion object {
         /** Versione leggera del brief (meteo, agenda, salute) per la notifica, senza interfaccia. */
         suspend fun buildState(ctx: Context): BriefState {
@@ -87,24 +98,39 @@ class BriefWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx,
         }
 
         private const val CHANNEL = "brief"
-        private const val WORK = "daily-brief"
 
+        /** Prossimo momento in cui arriverà il brief giornaliero. */
+        fun nextTime(prefs: Prefs): LocalDateTime {
+            val now = LocalDateTime.now()
+            val next = now.withHour(prefs.notifyHour).withMinute(prefs.notifyMinute).withSecond(0).withNano(0)
+            // Un minuto di margine: la sveglia scatta proprio a quell'ora e il prossimo giro è quello di domani.
+            return if (next.isAfter(now.plusMinutes(1))) next else next.plusDays(1)
+        }
+
+        /**
+         * Programma il brief giornaliero all'ora scelta. Si usa una sveglia e non un lavoro periodico:
+         * quello partiva a orari sbagliati (anche di notte) e a telefono fermo poteva tardare di ore.
+         */
         fun schedule(ctx: Context) {
             val prefs = Prefs(ctx)
             val wm = WorkManager.getInstance(ctx)
-            // Il widget non esiste più: si ferma l'aggiornamento orario lasciato dalle versioni precedenti.
+            // Residui delle versioni precedenti: l'aggiornamento orario del widget e il vecchio lavoro periodico.
             wm.cancelUniqueWork("widget-refresh")
+            wm.cancelUniqueWork("daily-brief")
             if (!prefs.notifyEnabled) {
-                wm.cancelUniqueWork(WORK)
+                Alarms.cancel(ctx, Alarms.BRIEF)
                 return
             }
-            val now = LocalDateTime.now()
-            var next = now.withHour(prefs.notifyHour).withMinute(prefs.notifyMinute).withSecond(0)
-            if (!next.isAfter(now)) next = next.plusDays(1)
-            val request = PeriodicWorkRequestBuilder<BriefWorker>(24, TimeUnit.HOURS)
-                .setInitialDelay(Duration.between(now, next).toMillis(), TimeUnit.MILLISECONDS)
+            Alarms.set(ctx, Alarms.BRIEF, nextTime(prefs).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli())
+        }
+
+        /** Prepara e mostra subito la notifica del brief; con [test] lo fa anche se quella giornaliera è spenta. */
+        fun runNow(ctx: Context, test: Boolean = false) {
+            val request = OneTimeWorkRequestBuilder<BriefWorker>()
+                .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
+                .setInputData(workDataOf("test" to test))
                 .build()
-            wm.enqueueUniquePeriodicWork(WORK, ExistingPeriodicWorkPolicy.UPDATE, request)
+            WorkManager.getInstance(ctx).enqueueUniqueWork("brief-now", ExistingWorkPolicy.REPLACE, request)
         }
     }
 }

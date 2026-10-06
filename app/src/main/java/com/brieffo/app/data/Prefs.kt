@@ -140,7 +140,7 @@ class Prefs(ctx: Context) {
 
     /** Voce locale scelta (una di LocalVoice.VOICES). */
     var localVoice: String
-        get() = sp.getString("localVoice", LocalVoice.VOICES.first().id) ?: LocalVoice.VOICES.first().id
+        get() = LocalVoice.voice(sp.getString("localVoice", "") ?: "").id
         set(v) = sp.edit { putString("localVoice", v) }
 
     /** Ultimo riepilogo scritto da Gemini e quando (millisecondi): si riusa finché è recente, per non consumare richieste. */
@@ -154,6 +154,19 @@ class Prefs(ctx: Context) {
     var speechVoice: String
         get() = sp.getString("speechVoice", "Kore") ?: "Kore"
         set(v) = sp.edit { putString("speechVoice", v) }
+
+    /** Quando deve scattare il promemoria della partita (millisecondi) e che cosa deve dire. */
+    var matchReminderAt: Long
+        get() = sp.getLong("matchReminderAt", 0)
+        set(v) = sp.edit { putLong("matchReminderAt", v) }
+
+    var matchReminderTitle: String
+        get() = sp.getString("matchReminderTitle", "") ?: ""
+        set(v) = sp.edit { putString("matchReminderTitle", v) }
+
+    var matchReminderText: String
+        get() = sp.getString("matchReminderText", "") ?: ""
+        set(v) = sp.edit { putString("matchReminderText", v) }
 
     var workAddress: String
         get() = sp.getString("workAddress", "") ?: ""

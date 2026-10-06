@@ -22,11 +22,15 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
 import java.util.Locale
 import kotlin.coroutines.resume
 
@@ -67,49 +71,129 @@ class Speaker(private val ctx: Context, private val scope: CoroutineScope) {
         job = scope.launch {
             try {
                 status = Status.LOADING
-                var audio = cached.takeIf { cachedFor == cacheKey }
-                if (audio == null) {
-                    audio = try {
-                        when (engine) {
-                            "local" -> local(voice, clean, speed)
-                            "gemini" -> if (key.isBlank()) error("manca la chiave API") else withContext(Dispatchers.IO) { Summary.speech(key, clean, voice) to Summary.SPEECH_RATE }
-                            else -> null
+                val ready = cached.takeIf { cachedFor == cacheKey }
+                val played = try {
+                    when {
+                        ready != null -> {
+                            status = Status.PLAYING
+                            playPcm(ready.first, ready.second, if (engine == "local") 1f else speed)
+                            true
                         }
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: Exception) {
-                        val who = if (engine == "local") "Voce locale" else "Voce di Gemini"
-                        note = "$who non disponibile (${e.message ?: "errore"}): uso quella del telefono."
-                        null
+                        engine == "local" -> {
+                            remember(cacheKey, playLocal(voice, clean, speed))
+                            true
+                        }
+                        engine == "gemini" -> {
+                            if (key.isBlank()) error("manca la chiave API")
+                            val audio = withContext(Dispatchers.IO) { Summary.speech(key, clean, voice) } to Summary.SPEECH_RATE
+                            remember(cacheKey, audio)
+                            status = Status.PLAYING
+                            playPcm(audio.first, audio.second, speed)
+                            true
+                        }
+                        else -> false
                     }
-                    if (audio != null) {
-                        cachedFor = cacheKey
-                        cached = audio
-                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    val who = if (engine == "local") "Voce locale" else "Voce di Gemini"
+                    note = "$who non disponibile (${e.message ?: "errore"}): uso quella del telefono."
+                    false
                 }
-                status = Status.PLAYING
-                if (audio != null && audio.first.size >= 2) playPcm(audio.first, audio.second, if (engine == "local") 1f else speed)
-                else if (!speakWithPhone(clean, speed)) note = "Sul telefono non c'è una voce italiana: installala dalle impostazioni di sintesi vocale di Android."
+                if (!played) {
+                    status = Status.PLAYING
+                    speakWithPhone(clean, speed)?.let { problem -> note = listOfNotNull(note, problem).joinToString(" ") }
+                }
             } finally {
                 status = Status.IDLE
             }
         }
     }
 
-    /** Legge con la voce locale, scaricandola prima se è la prima volta. */
-    private suspend fun local(voice: String, text: String, speed: Float): Pair<ByteArray, Int> = withContext(Dispatchers.IO) {
-        if (!LocalVoice.installed(ctx, voice)) {
-            val label = LocalVoice.voice(voice).label
-            note = "Scarico la voce $label, solo questa volta…"
+    private fun remember(key: String, audio: Pair<ByteArray, Int>) {
+        cachedFor = key
+        cached = audio
+    }
+
+    /**
+     * Legge con la voce locale, scaricando prima il modello se è la prima volta. Il testo si genera una frase
+     * alla volta e si comincia a sentire appena è pronta la prima, senza aspettare tutto il resto.
+     * Restituisce l'audio completo, da tenere per un eventuale riascolto.
+     */
+    private suspend fun playLocal(voice: String, text: String, speed: Float): Pair<ByteArray, Int> = coroutineScope {
+        if (!LocalVoice.installed(ctx)) withContext(Dispatchers.IO) {
+            note = "Scarico la voce locale (${LocalVoice.MEGABYTES} MB), solo questa volta…"
             try {
-                LocalVoice.download(ctx, voice, active = { isActive }) { pct -> note = "Scarico la voce $label, solo questa volta: $pct%" }
+                LocalVoice.download(ctx, active = { isActive }) { pct -> note = "Scarico la voce locale (${LocalVoice.MEGABYTES} MB), solo questa volta: $pct%" }
             } catch (e: InterruptedException) {
                 throw CancellationException("download interrotto")
             }
             note = null
         }
-        LocalVoice.synthesize(ctx, voice, text, speed)
+        val sentences = text.split(Regex("(?<=[.!?])\\s+")).filter { it.isNotBlank() }
+        val chunks = Channel<Pair<ByteArray, Int>>(Channel.UNLIMITED)
+        val producer = launch(Dispatchers.IO) {
+            try {
+                for (sentence in sentences) {
+                    ensureActive()
+                    chunks.send(LocalVoice.synthesize(ctx, voice, sentence, speed))
+                }
+                chunks.close()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                chunks.close(e)
+            }
+        }
+        val all = ByteArrayOutputStream()
+        var track: AudioTrack? = null
+        var rate = 0
+        try {
+            for ((pcm, sampleRate) in chunks) {
+                val t = track ?: newTrack(sampleRate, AudioTrack.MODE_STREAM, AudioTrack.getMinBufferSize(sampleRate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT) * 4).also {
+                    track = it
+                    rate = sampleRate
+                    it.play()
+                    status = Status.PLAYING
+                }
+                all.write(pcm)
+                // A piccoli pezzi, così fermando la lettura non si resta bloccati nella scrittura.
+                withContext(Dispatchers.IO) {
+                    var offset = 0
+                    while (offset < pcm.size && isActive) {
+                        val n = t.write(pcm, offset, minOf(8192, pcm.size - offset))
+                        if (n <= 0) break
+                        offset += n
+                    }
+                }
+            }
+            // Finito di scrivere, si aspetta che l'altoparlante arrivi in fondo.
+            track?.let { t ->
+                val frames = all.size() / 2
+                var waited = 0
+                while (t.playbackHeadPosition < frames && waited < 5000) { delay(50); waited += 50 }
+            }
+            all.toByteArray() to rate
+        } finally {
+            producer.cancel()
+            track?.let { t ->
+                runCatching { t.pause(); t.flush() }
+                t.release()
+            }
+        }
     }
+
+    private fun newTrack(sampleRate: Int, mode: Int, bufferBytes: Int) = AudioTrack.Builder()
+        .setAudioAttributes(
+            AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()
+        )
+        .setAudioFormat(
+            AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_16BIT).setSampleRate(sampleRate)
+                .setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build()
+        )
+        .setTransferMode(mode)
+        .setBufferSizeInBytes(bufferBytes)
+        .build()
 
     fun stop() {
         job?.cancel()
@@ -124,17 +208,7 @@ class Speaker(private val ctx: Context, private val scope: CoroutineScope) {
 
     private suspend fun playPcm(pcm: ByteArray, sampleRate: Int, speed: Float) {
         val bytes = pcm.size - pcm.size % 2
-        val track = AudioTrack.Builder()
-            .setAudioAttributes(
-                AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()
-            )
-            .setAudioFormat(
-                AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_16BIT).setSampleRate(sampleRate)
-                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build()
-            )
-            .setTransferMode(AudioTrack.MODE_STATIC)
-            .setBufferSizeInBytes(bytes)
-            .build()
+        val track = newTrack(sampleRate, AudioTrack.MODE_STATIC, bytes)
         try {
             track.write(pcm, 0, bytes)
             // Cambia solo la velocità: il tono della voce resta quello originale.
@@ -148,32 +222,47 @@ class Speaker(private val ctx: Context, private val scope: CoroutineScope) {
         }
     }
 
-    /** Falso se sul telefono non c'è una voce italiana utilizzabile. */
-    private suspend fun speakWithPhone(text: String, speed: Float): Boolean {
+    /** Legge con la sintesi vocale di Android. Restituisce null se è andata bene, altrimenti il motivo da mostrare. */
+    private suspend fun speakWithPhone(text: String, speed: Float): String? {
         val engine = tts ?: suspendCancellableCoroutine { cont ->
             var created: TextToSpeech? = null
             created = TextToSpeech(ctx) { result -> if (cont.isActive) cont.resume(created.takeIf { result == TextToSpeech.SUCCESS }) }
-        }?.also { tts = it } ?: return false
-        if (engine.setLanguage(Locale.ITALIAN) < TextToSpeech.LANG_AVAILABLE) return false
-        // Tra le voci italiane si sceglie la migliore che funziona anche senza rete.
-        runCatching {
-            engine.voices?.filter { it.locale.language == "it" && !it.isNetworkConnectionRequired }?.maxByOrNull { it.quality }?.let { engine.voice = it }
+        }?.also { tts = it } ?: return "Sul telefono non trovo un motore di sintesi vocale: installa \"Sintesi vocale Google\" dal Play Store."
+        val language = engine.setLanguage(Locale.ITALY)
+        if (language == TextToSpeech.LANG_MISSING_DATA || language == TextToSpeech.LANG_NOT_SUPPORTED) {
+            return "Sul telefono manca la voce italiana: scaricala da Impostazioni di Android > Sintesi vocale."
         }
+        // Tra le voci italiane già scaricate si sceglie la migliore che funziona senza rete. Quelle solo elencate
+        // ma non installate vanno scartate: sceglierne una farebbe restare la lettura in silenzio.
+        runCatching {
+            engine.voices
+                ?.filter { v ->
+                    v.locale.language == "it" && !v.isNetworkConnectionRequired &&
+                        TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED !in v.features.orEmpty()
+                }
+                ?.maxByOrNull { it.quality }
+                ?.let { engine.voice = it }
+        }
+        engine.setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
         engine.setSpeechRate(speed)
         try {
-            suspendCancellableCoroutine { cont ->
+            return suspendCancellableCoroutine { cont ->
                 engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                     override fun onStart(utteranceId: String?) = Unit
-                    override fun onDone(utteranceId: String?) { if (cont.isActive) cont.resume(Unit) }
+                    override fun onDone(utteranceId: String?) { if (cont.isActive) cont.resume(null) }
                     @Deprecated("Deprecated in Java")
-                    override fun onError(utteranceId: String?) { if (cont.isActive) cont.resume(Unit) }
+                    override fun onError(utteranceId: String?) { if (cont.isActive) cont.resume("La voce del telefono non è riuscita a leggere il testo.") }
+                    override fun onError(utteranceId: String?, errorCode: Int) {
+                        if (cont.isActive) cont.resume("La voce del telefono non è riuscita a leggere il testo (errore $errorCode).")
+                    }
                 })
-                if (engine.speak(text, TextToSpeech.QUEUE_FLUSH, null, "brief") != TextToSpeech.SUCCESS && cont.isActive) cont.resume(Unit)
+                if (engine.speak(text, TextToSpeech.QUEUE_FLUSH, null, "brief") != TextToSpeech.SUCCESS && cont.isActive) {
+                    cont.resume("La voce del telefono ha rifiutato il testo.")
+                }
             }
         } finally {
             engine.stop()
         }
-        return true
     }
 }
 

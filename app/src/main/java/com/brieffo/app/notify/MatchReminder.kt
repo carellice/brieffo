@@ -10,40 +10,81 @@ import android.content.pm.PackageManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
-import androidx.work.CoroutineWorker
-import androidx.work.ExistingWorkPolicy
-import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
-import androidx.work.WorkerParameters
-import androidx.work.workDataOf
 import com.brieffo.app.MainActivity
 import com.brieffo.app.R
 import com.brieffo.app.data.Match
 import com.brieffo.app.data.Prefs
-import java.time.Duration
-import java.time.LocalDateTime
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import java.util.concurrent.TimeUnit
 
 /** Notifica che ricorda la prossima partita poco prima del fischio d'inizio. Ce n'è al massimo una in attesa. */
-class MatchReminder(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, params) {
+object MatchReminder {
+    /** Quanto prima dell'inizio arriva il promemoria. */
+    const val MINUTES_BEFORE = 30L
 
-    override suspend fun doWork(): Result {
-        val ctx = applicationContext
-        Prefs(ctx).matchReminder = ""
-        if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-            return Result.success()
+    private const val CHANNEL = "match"
+    private val hm = DateTimeFormatter.ofPattern("HH:mm")
+
+    /** Identifica la partita a cui è legato il promemoria: se cambia data o orario, cambia anche la chiave. */
+    fun key(m: Match) = "${pair(m)}${m.date}"
+
+    /** Vero se [key] è il promemoria di questa stessa partita, ma con una data diversa da quella attuale. */
+    fun moved(key: String, m: Match) = key.startsWith(pair(m)) && key != key(m)
+
+    private fun pair(m: Match) = "${m.home}|${m.away}|"
+
+    fun schedule(ctx: Context, m: Match) {
+        val date = m.date ?: return
+        val prefs = Prefs(ctx)
+        prefs.matchReminder = key(m)
+        prefs.matchReminderTitle = "${m.home} – ${m.away}"
+        prefs.matchReminderText = listOfNotNull("Inizia alle ${date.format(hm)}", m.league.takeIf { it.isNotBlank() }, m.venue).joinToString(" · ")
+        prefs.matchReminderAt = date.minusMinutes(MINUTES_BEFORE).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        // Se manca meno del preavviso, la notifica parte subito.
+        if (prefs.matchReminderAt <= System.currentTimeMillis()) show(ctx) else Alarms.set(ctx, Alarms.MATCH, prefs.matchReminderAt)
+    }
+
+    fun cancel(ctx: Context) {
+        Alarms.cancel(ctx, Alarms.MATCH)
+        clear(ctx)
+    }
+
+    /** Dopo un riavvio o un aggiornamento la sveglia va rimessa; se nel frattempo è passata l'ora, il promemoria parte adesso. */
+    fun restore(ctx: Context) {
+        // Le versioni precedenti usavano un lavoro in background: non serve più.
+        WorkManager.getInstance(ctx).cancelUniqueWork("match-reminder")
+        val prefs = Prefs(ctx)
+        if (prefs.matchReminder.isBlank()) return
+        val now = System.currentTimeMillis()
+        when {
+            prefs.matchReminderAt > now -> Alarms.set(ctx, Alarms.MATCH, prefs.matchReminderAt)
+            now < prefs.matchReminderAt + MINUTES_BEFORE * 60_000 -> show(ctx)
+            else -> clear(ctx)
         }
+    }
+
+    private fun clear(ctx: Context) {
+        val prefs = Prefs(ctx)
+        prefs.matchReminder = ""
+        prefs.matchReminderAt = 0
+    }
+
+    fun show(ctx: Context) {
+        val prefs = Prefs(ctx)
+        val title = prefs.matchReminderTitle.ifBlank { "Partita in arrivo" }
+        val text = prefs.matchReminderText
+        clear(ctx)
+        if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
         val nm = ctx.getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(NotificationChannel(CHANNEL, "Promemoria partite", NotificationManager.IMPORTANCE_HIGH))
         val open = PendingIntent.getActivity(
             ctx, 0, Intent(ctx, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val text = inputData.getString("text") ?: ""
         val n = NotificationCompat.Builder(ctx, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_brief)
-            .setContentTitle(inputData.getString("title") ?: "Partita in arrivo")
+            .setContentTitle(title)
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setContentIntent(open)
@@ -51,41 +92,5 @@ class MatchReminder(ctx: Context, params: WorkerParameters) : CoroutineWorker(ct
             .build()
         @Suppress("MissingPermission")
         NotificationManagerCompat.from(ctx).notify(2, n)
-        return Result.success()
-    }
-
-    companion object {
-        /** Quanto prima dell'inizio arriva il promemoria. */
-        const val MINUTES_BEFORE = 30L
-
-        private const val CHANNEL = "match"
-        private const val WORK = "match-reminder"
-        private val hm = DateTimeFormatter.ofPattern("HH:mm")
-
-        /** Identifica la partita a cui è legato il promemoria: se cambia data o orario, cambia anche la chiave. */
-        fun key(m: Match) = "${pair(m)}${m.date}"
-
-        /** Vero se [key] è il promemoria di questa stessa partita, ma con una data diversa da quella attuale. */
-        fun moved(key: String, m: Match) = key.startsWith(pair(m)) && key != key(m)
-
-        private fun pair(m: Match) = "${m.home}|${m.away}|"
-
-        fun schedule(ctx: Context, m: Match) {
-            val date = m.date ?: return
-            // Se manca meno del preavviso, la notifica parte subito.
-            val delay = Duration.between(LocalDateTime.now(), date.minusMinutes(MINUTES_BEFORE)).toMillis().coerceAtLeast(0)
-            val text = listOfNotNull("Inizia alle ${date.format(hm)}", m.league.takeIf { it.isNotBlank() }, m.venue).joinToString(" · ")
-            val request = OneTimeWorkRequestBuilder<MatchReminder>()
-                .setInitialDelay(delay, TimeUnit.MILLISECONDS)
-                .setInputData(workDataOf("title" to "${m.home} – ${m.away}", "text" to text))
-                .build()
-            WorkManager.getInstance(ctx).enqueueUniqueWork(WORK, ExistingWorkPolicy.REPLACE, request)
-            Prefs(ctx).matchReminder = key(m)
-        }
-
-        fun cancel(ctx: Context) {
-            WorkManager.getInstance(ctx).cancelUniqueWork(WORK)
-            Prefs(ctx).matchReminder = ""
-        }
     }
 }

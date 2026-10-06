@@ -64,7 +64,7 @@ della giornata oppure, se preferisci, lo decidi tu dalle impostazioni.
 - **Riepilogo richiudibile**: quello scritto da Gemini si apre e si chiude con un tocco, e può partire già chiuso.
 - **Ordine delle schede**: automatico oppure sistemato a mano, una scheda alla volta.
 - **Ricerca della squadra** con campionato, per non confondere due squadre con lo stesso nome.
-- **Notifica giornaliera** con il riepilogo, all'ora che decidi.
+- **Notifica giornaliera** con il riepilogo, all'ora che decidi. Nelle impostazioni vedi quali notifiche sono attive, quando arriva la prossima, e puoi mandartene una di prova.
 - **Promemoria della partita**: un tocco sulla prossima gara e ricevi una notifica 30 minuti prima dell'inizio.
 - **Riepilogo da ascoltare**: un tocco su *Ascolta* e te lo legge una voce che gira tutta sul telefono, gratuita e senza limiti (si scarica una volta, circa 64 MB). In alternativa una voce di Gemini o quella di Android; velocità e voce a scelta.
 - **Aggiornamento misurato**: il brief si ricarica da solo ogni quattro ore; quando vuoi dati freschi, trascina verso il basso.
@@ -99,6 +99,7 @@ Sono tutti facoltativi: ciò che non consenti resta semplicemente vuoto.
 | Calendario (modifica) | Solo per chiedere ad Android di scaricare i calendari che accendi |
 | Contatti | Compleanni in arrivo |
 | Notifiche | Brief giornaliero e promemoria della partita |
+| Sveglie e avvio al riavvio | Far arrivare le notifiche all'ora esatta, anche dopo aver riacceso il telefono |
 | Health Connect | Passi, sonno, battito, calorie, distanza |
 | Accesso ai dati di utilizzo | Tempo passato al telefono |
 

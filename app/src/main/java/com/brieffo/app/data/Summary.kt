@@ -189,8 +189,21 @@ object Summary {
         "Puck" to "vivace", "Charon" to "chiara", "Algieba" to "morbida", "Achird" to "amichevole",
     )
 
-    /** Toglie emoji e simboli dal testo, che letti ad alta voce diventerebbero rumore, e unisce le righe. */
-    fun speakable(text: String) = text.replace(Regex("[\\p{So}\\p{Sk}\\x{FE0F}\\x{200D}]"), "")
+    /**
+     * Prepara il testo per la lettura ad alta voce: scrive per esteso orari, gradi, percentuali e punteggi,
+     * toglie emoji e simboli, che letti diventerebbero rumore, e unisce le righe.
+     */
+    fun speakable(text: String) = text
+        .replace(Regex("(\\d{1,2}):00\\b"), "$1")
+        .replace(Regex("(\\d{1,2}):0?(\\d{1,2})\\b"), "$1 e $2")
+        .replace(Regex("(\\d)\\s*°"), "$1 gradi")
+        .replace(Regex("(\\d)\\s*%"), "$1 per cento")
+        .replace(Regex("\\bkm/h\\b"), "chilometri orari")
+        .replace(Regex("(\\d)\\s*km\\b"), "$1 chilometri")
+        .replace(Regex("(\\d+)\\s*[–-]\\s*(\\d+)"), "$1 a $2")
+        .replace(Regex("(\\d)\\s*€"), "$1 euro").replace("€", " euro ")
+        .replace("·", ",").replace("«", "").replace("»", "")
+        .replace(Regex("[\\p{So}\\p{Sk}\\x{FE0F}\\x{200D}]"), "")
         .lines().map { it.trim() }.filter { it.isNotEmpty() }
         .joinToString(" ") { if (it.last() in ".!?:;,") it else "$it." }
 

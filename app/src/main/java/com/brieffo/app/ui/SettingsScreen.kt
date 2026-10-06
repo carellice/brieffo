@@ -1,6 +1,8 @@
 package com.brieffo.app.ui
 
 import android.Manifest
+import android.content.Intent
+import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -106,6 +108,29 @@ import com.brieffo.app.data.Prefs
 import com.brieffo.app.data.SportRepo
 import com.brieffo.app.data.Summary
 import com.brieffo.app.data.TeamRef
+import com.brieffo.app.notify.Alarms
+import com.brieffo.app.notify.BriefWorker
+import com.brieffo.app.notify.MatchReminder
+import androidx.core.app.NotificationManagerCompat
+import java.time.Instant
+import java.time.LocalDateTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
+import androidx.lifecycle.compose.LifecycleResumeEffect
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.material3.Surface
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.vector.ImageVector
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
@@ -152,6 +177,53 @@ internal fun Note(text: String) {
     Text(text, fontSize = 12.sp, lineHeight = 17.sp, color = LocalPalette.current.sub)
 }
 
+/**
+ * Sezione delle impostazioni che si apre e si chiude toccando l'intestazione. Da chiusa mostra, sotto il titolo,
+ * una riga che riassume cosa c'è dentro, così spesso non serve nemmeno aprirla.
+ */
+@Composable
+internal fun SettingsSection(
+    title: String,
+    icon: ImageVector,
+    summary: String,
+    open: Boolean,
+    onToggle: () -> Unit,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val p = LocalPalette.current
+    val turn by animateFloatAsState(if (open) 180f else 0f, label = "chevron")
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(28.dp),
+        color = p.card,
+        contentColor = p.text,
+        border = BorderStroke(1.dp, p.stroke),
+    ) {
+        Column {
+            Row(
+                Modifier.fillMaxWidth().clickable(onClickLabel = if (open) "Chiudi $title" else "Apri $title", onClick = onToggle).padding(20.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(Modifier.size(32.dp).background(p.accent, CircleShape), contentAlignment = Alignment.Center) {
+                    Icon(icon, null, Modifier.size(18.dp), tint = p.onAccent)
+                }
+                Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                    Text(title, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                    if (!open && summary.isNotBlank()) Text(summary, fontSize = 12.sp, lineHeight = 16.sp, color = p.sub, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                Icon(Icons.Rounded.KeyboardArrowDown, null, Modifier.size(24.dp).rotate(turn), tint = p.sub)
+            }
+            AnimatedVisibility(
+                visible = open,
+                enter = expandVertically(spring(dampingRatio = 0.9f, stiffness = Spring.StiffnessMediumLow)) + fadeIn(),
+                exit = shrinkVertically(spring(dampingRatio = 0.9f, stiffness = Spring.StiffnessMediumLow)) + fadeOut(),
+            ) {
+                Column(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 20.dp)) { content() }
+            }
+        }
+    }
+}
+
 /** Impostazioni a tutto schermo, con lo stesso sfondo e le stesse schede del brief. Uscendo si salva. */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -186,7 +258,11 @@ fun SettingsScreen(
     var speechEngine by remember { mutableStateOf(prefs.speechEngine) }
     var localVoice by remember { mutableStateOf(prefs.localVoice) }
     var voicesVersion by remember { mutableIntStateOf(0) }
+    // Le sezioni partono tutte chiuse: si apre solo quella che serve.
+    var openSections by remember { mutableStateOf(emptySet<String>()) }
     var pickTime by remember { mutableStateOf(false) }
+    var notifyCheck by remember { mutableIntStateOf(0) }
+    var testSent by remember { mutableStateOf(false) }
     val time = rememberTimePickerState(prefs.notifyHour, prefs.notifyMinute, is24Hour = true)
     var key by remember { mutableStateOf(prefs.geminiKey) }
     var collapsed by remember { mutableStateOf(prefs.summaryCollapsed) }
@@ -288,6 +364,10 @@ fun SettingsScreen(
         }
     }
     BackHandler(onBack = onBack)
+    LifecycleResumeEffect(Unit) {
+        notifyCheck++
+        onPauseOrDispose { }
+    }
     val pageScroll = rememberScrollState()
 
     Column(
@@ -306,7 +386,7 @@ fun SettingsScreen(
             Text("Impostazioni", fontSize = 36.sp, lineHeight = 42.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 4.dp))
         }
 
-        BriefCard("Aspetto", Icons.Rounded.Palette) {
+        SettingsSection("Aspetto", Icons.Rounded.Palette, listOf(when (themeMode) { "light" -> "Tema chiaro"; "dark" -> "Tema scuro"; else -> "Tema automatico" }, if (railRight) "indice a destra" else "indice a sinistra").joinToString(" · "), "Aspetto" in openSections, { openSections = if ("Aspetto" in openSections) openSections - "Aspetto" else openSections + "Aspetto" }) {
             Note("Tema")
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf("system" to "Automatico", "light" to "Chiaro", "dark" to "Scuro").forEach { (value, label) ->
@@ -356,7 +436,7 @@ fun SettingsScreen(
             Note(if (accentName == null) "Automatico: il colore cambia con il momento della giornata." else "Colore fisso: $accentName.")
         }
 
-        BriefCard("Profilo", Icons.Rounded.Person) {
+        SettingsSection("Profilo", Icons.Rounded.Person, listOf(name, city.ifBlank { "posizione del telefono" }).filter { it.isNotBlank() }.joinToString(" · "), "Profilo" in openSections, { openSections = if ("Profilo" in openSections) openSections - "Profilo" else openSections + "Profilo" }) {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Field(name, { name = it }, "Il tuo nome")
                 Field(city, { city = it }, "Città", hint = "Lascia vuoto per usare la posizione del telefono")
@@ -364,7 +444,7 @@ fun SettingsScreen(
             }
         }
 
-        BriefCard("Schede da mostrare", Icons.Rounded.Dashboard) {
+        SettingsSection("Schede da mostrare", Icons.Rounded.Dashboard, "${CardKeys.labels.keys.count { it !in hidden }} accese su ${CardKeys.labels.size}", "Schede da mostrare" in openSections, { openSections = if ("Schede da mostrare" in openSections) openSections - "Schede da mostrare" else openSections + "Schede da mostrare" }) {
             CardKeys.labels.forEach { (cardKey, label) ->
                 ToggleRow(label, cardKey !in hidden) { show -> hidden = if (show) hidden - cardKey else hidden + cardKey }
             }
@@ -372,7 +452,7 @@ fun SettingsScreen(
             Note("Il riepilogo in cima resta sempre visibile. Le schede spente non scaricano dati.")
         }
 
-        BriefCard("Ordine delle schede", Icons.Rounded.SwapVert) {
+        SettingsSection("Ordine delle schede", Icons.Rounded.SwapVert, if (order.isEmpty()) "Automatico" else "Scelto da te", "Ordine delle schede" in openSections, { openSections = if ("Ordine delle schede" in openSections) openSections - "Ordine delle schede" else openSections + "Ordine delle schede" }) {
             ToggleRow("Ordine automatico", order.isEmpty(), detail = "Cambia con il momento della giornata") { auto ->
                 order = if (auto) emptyList() else CardKeys.sortable
             }
@@ -401,7 +481,7 @@ fun SettingsScreen(
             }
         }
 
-        if (CardKeys.AGENDA !in hidden) BriefCard("Calendari", Icons.Rounded.CalendarMonth) {
+        if (CardKeys.AGENDA !in hidden) SettingsSection("Calendari", Icons.Rounded.CalendarMonth, calendars.count { CalendarRepo.isSelected(it, calOn, calOff) }.let { n -> if (calendars.isEmpty()) "Accesso non concesso" else "$n accesi su ${calendars.size}" }, "Calendari" in openSections, { openSections = if ("Calendari" in openSections) openSections - "Calendari" else openSections + "Calendari" }) {
             if (calendars.isEmpty()) {
                 Hint("Non vedo calendari: consenti l'accesso al calendario per sceglierli.")
                 ActionButton("Consenti", onGrantCalendar)
@@ -473,15 +553,15 @@ fun SettingsScreen(
             }
         }
 
-        if (CardKeys.NEWS !in hidden) BriefCard("Notizie", Icons.Rounded.Newspaper) {
+        if (CardKeys.NEWS !in hidden) SettingsSection("Notizie", Icons.Rounded.Newspaper, feeds.count { it.enabled }.let { n -> if (n == 0) "Nessuna fonte" else if (n == 1) "1 fonte" else "$n fonti" }, "Notizie" in openSections, { openSections = if ("Notizie" in openSections) openSections - "Notizie" else openSections + "Notizie" }) {
             FeedEditor(feeds) { feeds = it }
         }
 
-        if (CardKeys.SPORT !in hidden) BriefCard("La tua squadra", Icons.Rounded.SportsSoccer) {
+        if (CardKeys.SPORT !in hidden) SettingsSection("La tua squadra", Icons.Rounded.SportsSoccer, (TeamRef.decode(teamRef)?.name ?: team).ifBlank { "Non scelta" }, "La tua squadra" in openSections, { openSections = if ("La tua squadra" in openSections) openSections - "La tua squadra" else openSections + "La tua squadra" }) {
             TeamPicker(team, teamRef) { t, r -> team = t; teamRef = r }
         }
 
-        if (CardKeys.TRAVEL !in hidden) BriefCard("Spostamenti", Icons.Rounded.Commute) {
+        if (CardKeys.TRAVEL !in hidden) SettingsSection("Spostamenti", Icons.Rounded.Commute, work.ifBlank { "Indirizzo non impostato" }, "Spostamenti" in openSections, { openSections = if ("Spostamenti" in openSections) openSections - "Spostamenti" else openSections + "Spostamenti" }) {
             Field(work, { work = it }, "Indirizzo del lavoro", hint = "Via, numero e città. Lascia vuoto se non ti serve")
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf("car" to "In auto", "bike" to "In bici", "foot" to "A piedi").forEach { (value, label) ->
@@ -490,7 +570,7 @@ fun SettingsScreen(
             }
         }
 
-        BriefCard("Lettura ad alta voce", Icons.Rounded.RecordVoiceOver) {
+        SettingsSection("Lettura ad alta voce", Icons.Rounded.RecordVoiceOver, when (speechEngine) { "local" -> "Voce locale"; "gemini" -> "Voce di Gemini"; else -> "Voce del telefono" } + " · %.1f×".format(speechSpeed / 100f), "Lettura ad alta voce" in openSections, { openSections = if ("Lettura ad alta voce" in openSections) openSections - "Lettura ad alta voce" else openSections + "Lettura ad alta voce" }) {
             // Voce e velocità si salvano subito, così "Ascolta un esempio" usa già la scelta appena fatta.
             Text("Velocità: %.1f×".format(speechSpeed / 100f), fontSize = 15.sp)
             Slider(
@@ -509,12 +589,7 @@ fun SettingsScreen(
                     Note("Voce")
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         LocalVoice.VOICES.forEach { v ->
-                            val ready = remember(v.id, voicesVersion) { LocalVoice.installed(context, v.id) }
-                            FilterChip(
-                                selected = localVoice == v.id,
-                                onClick = { localVoice = v.id; prefs.localVoice = v.id },
-                                label = { Text(if (ready) "${v.label} · scaricata" else "${v.label} · ${v.megabytes} MB") },
-                            )
+                            FilterChip(selected = localVoice == v.id, onClick = { localVoice = v.id; prefs.localVoice = v.id }, label = { Text(v.label) })
                         }
                     }
                 }
@@ -531,6 +606,7 @@ fun SettingsScreen(
                     }
                 }
             }
+            val localReady = remember(voicesVersion) { LocalVoice.installed(context) }
             val speaker = rememberSpeaker()
             OutlinedButton(
                 onClick = {
@@ -556,32 +632,88 @@ fun SettingsScreen(
             Spacer(Modifier.height(8.dp))
             Note(
                 when (speechEngine) {
-                    "local" -> "Gratuita e senza limiti: la voce gira tutta sul telefono e il testo non esce da qui. Si scarica una volta sola al primo ascolto, poi funziona anche senza rete."
+                    "local" -> "Gratuita e senza limiti: la voce gira tutta sul telefono e il testo non esce da qui. Il modello (${LocalVoice.MEGABYTES} MB, uno solo per tutte le voci) si scarica al primo ascolto, poi funziona anche senza rete." + (if (localReady) " Già scaricato." else "")
                     "gemini" -> "La voce più naturale, ma serve la chiave di Gemini: il testo viene inviato a Google e il piano gratuito ha un numero limitato di letture al giorno."
                     else -> "La sintesi vocale di Android: sempre disponibile, meno naturale. Si regola solo la velocità."
                 } + " Il tasto Ascolta è nella scheda del riepilogo."
             )
-            if (speechEngine == "local" && LocalVoice.VOICES.any { remember(it.id, voicesVersion) { LocalVoice.installed(context, it.id) } }) {
+            if (speechEngine == "local" && localReady) {
                 OutlinedButton(onClick = { LocalVoice.deleteAll(context); voicesVersion++ }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
-                    Text("Elimina le voci scaricate", color = p.accent)
+                    Text("Elimina la voce scaricata", color = p.accent)
                 }
             }
             // Finito un ascolto la voce può essere appena stata scaricata: le etichette si aggiornano.
             LaunchedEffect(speaker.status) { if (speaker.status == Speaker.Status.IDLE) voicesVersion++ }
         }
 
-        BriefCard("Notifica giornaliera", Icons.Rounded.NotificationsActive) {
-            ToggleRow("Ricevi il brief ogni giorno", notify, detail = "All'ora che scegli qui sotto") { notify = it }
+        SettingsSection("Notifiche", Icons.Rounded.NotificationsActive, if (notify) "Brief ogni giorno alle %02d:%02d".format(time.hour, time.minute) else "Brief giornaliero spento", "Notifiche" in openSections, { openSections = if ("Notifiche" in openSections) openSections - "Notifiche" else openSections + "Notifiche" }) {
+            val whenFormat = remember { DateTimeFormatter.ofPattern("EEEE d MMMM 'alle' HH:mm", Locale.ITALIAN) }
+            val allowed = remember(notifyCheck) { NotificationManagerCompat.from(context).areNotificationsEnabled() }
+            Note("Brieffo manda solo queste due notifiche, più quella di prova qui sotto.")
+            if (!allowed) {
+                Spacer(Modifier.height(8.dp))
+                Text("Le notifiche di Brieffo sono bloccate da Android: finché restano così non arriva nulla.", fontSize = 14.sp, lineHeight = 19.sp, color = Color(0xFFE5484D))
+                OutlinedButton(
+                    onClick = {
+                        runCatching {
+                            context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName))
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                ) { Text("Apri le impostazioni delle notifiche", color = p.accent) }
+            }
+            Spacer(Modifier.height(10.dp))
+
+            Text("Brief giornaliero", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = p.sub)
+            ToggleRow("Ricevi il brief ogni giorno", notify, detail = "Il riepilogo della giornata, all'ora che scegli") { notify = it }
             if (notify) {
                 // Il quadrante si apre solo su richiesta: un campo orario prenderebbe il focus aprendo subito la tastiera.
                 OutlinedButton(onClick = { pickTime = !pickTime }, modifier = Modifier.padding(top = 8.dp)) {
                     Text("Ore %02d:%02d".format(time.hour, time.minute), color = p.accent)
                 }
                 if (pickTime) TimePicker(time, modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 12.dp))
+                val now = LocalDateTime.now()
+                val next = now.withHour(time.hour).withMinute(time.minute).withSecond(0).let { if (it.isAfter(now)) it else it.plusDays(1) }
+                Spacer(Modifier.height(6.dp))
+                Note(
+                    "Prossima: ${next.format(whenFormat)}." +
+                        if (Alarms.exact(context)) "" else " Android non concede a Brieffo le sveglie precise: può arrivare con qualche minuto di ritardo."
+                )
+            }
+            Spacer(Modifier.height(14.dp))
+
+            Text("Promemoria della partita", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = p.sub)
+            val reminderAt = remember(notifyCheck) { prefs.matchReminderAt.takeIf { prefs.matchReminder.isNotBlank() && it > System.currentTimeMillis() } }
+            if (reminderAt != null) {
+                val at = Instant.ofEpochMilli(reminderAt).atZone(ZoneId.systemDefault()).toLocalDateTime()
+                Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(prefs.matchReminderTitle, fontSize = 15.sp)
+                        Text("Arriva ${at.format(whenFormat)}", fontSize = 12.sp, lineHeight = 16.sp, color = p.sub)
+                    }
+                    OutlinedButton(onClick = { MatchReminder.cancel(context); notifyCheck++ }) { Text("Togli", color = p.accent) }
+                }
+            } else {
+                Spacer(Modifier.height(4.dp))
+                Note("Nessuno in attesa. Si accende dal brief, con \"Avvisami ${MatchReminder.MINUTES_BEFORE} minuti prima\" sotto la prossima partita.")
+            }
+            Spacer(Modifier.height(12.dp))
+
+            OutlinedButton(
+                onClick = {
+                    BriefWorker.runNow(context, test = true)
+                    testSent = true
+                    notifyCheck++
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Invia una notifica di prova", color = p.accent) }
+            if (testSent) {
+                Spacer(Modifier.height(6.dp))
+                Note(if (allowed) "In arrivo tra qualche secondo: è il brief di adesso, come quello giornaliero." else "Inviata, ma con le notifiche bloccate non comparirà.")
             }
         }
 
-        BriefCard("Backup della configurazione", Icons.Rounded.ImportExport) {
+        SettingsSection("Backup della configurazione", Icons.Rounded.ImportExport, "Esporta o importa le impostazioni", "Backup della configurazione" in openSections, { openSections = if ("Backup della configurazione" in openSections) openSections - "Backup della configurazione" else openSections + "Backup della configurazione" }) {
             Note("Per cambiare telefono: esporta la configurazione in un file, portalo sul nuovo telefono e importalo da qui.")
             Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedButton(onClick = { exportBackup.launch("brieffo-backup.json") }, modifier = Modifier.weight(1f)) {
@@ -597,7 +729,7 @@ fun SettingsScreen(
             }
         }
 
-        BriefCard("Riepilogo con IA", Icons.Rounded.AutoAwesome) {
+        SettingsSection("Riepilogo con IA", Icons.Rounded.AutoAwesome, if (key.isBlank()) "Scritto dall'app" else "Scritto da Gemini", "Riepilogo con IA" in openSections, { openSections = if ("Riepilogo con IA" in openSections) openSections - "Riepilogo con IA" else openSections + "Riepilogo con IA" }) {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Note("Con una chiave API di Google il riepilogo viene scritto da Gemini. È gratuita e non serve la carta di credito.")
                 Column(
