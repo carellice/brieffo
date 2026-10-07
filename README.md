@@ -68,6 +68,7 @@ della giornata oppure, se preferisci, lo decidi tu dalle impostazioni.
 - **Promemoria della partita**: un tocco sulla prossima gara e ricevi una notifica 30 minuti prima dell'inizio.
 - **Riepilogo da ascoltare**: un tocco su *Ascolta* e te lo legge una voce che gira tutta sul telefono, gratuita e senza limiti (si scarica una volta, circa 64 MB). In alternativa una voce di Gemini o quella di Android; velocità e voce a scelta.
 - **Aggiornamento misurato**: il brief si ricarica da solo ogni quattro ore; quando vuoi dati freschi, trascina verso il basso.
+- **Widget per la Home**: prossima partita, meteo, agenda e riepilogo, da aggiungere dalle impostazioni o dal menu dei widget di Android.
 - **Backup della configurazione**: esporta tutto in un file e importalo sul telefono nuovo.
 - **Icone disegnate su misura** per il meteo e la fase lunare.
 

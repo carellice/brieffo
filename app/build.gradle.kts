@@ -49,6 +49,7 @@ dependencies {
     implementation("androidx.health.connect:connect-client:1.1.0")
     implementation("androidx.work:work-runtime-ktx:2.10.5")
     implementation("io.coil-kt:coil-compose:2.7.0")
+    implementation("androidx.glance:glance-appwidget:1.1.1")
     // Voce locale: sherpa-onnx fa girare sul telefono i modelli Piper, commons-compress ne scompatta l'archivio.
     implementation("com.github.k2-fsa.sherpa-onnx:sherpa-onnx:v1.13.8")
     implementation("org.apache.commons:commons-compress:1.27.1")

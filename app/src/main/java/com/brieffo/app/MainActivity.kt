@@ -59,6 +59,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.brieffo.app.data.HealthRepo
 import com.brieffo.app.notify.BriefWorker
 import com.brieffo.app.notify.MatchReminder
+import com.brieffo.app.widget.WidgetWorker
 import com.brieffo.app.ui.AuroraBackground
 import com.brieffo.app.ui.BriefActions
 import com.brieffo.app.ui.BriefScreen
@@ -74,6 +75,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         BriefWorker.schedule(this)
         MatchReminder.restore(this)
+        WidgetWorker.schedule(this)
 
         setContent {
             val state by vm.state.collectAsStateWithLifecycle()

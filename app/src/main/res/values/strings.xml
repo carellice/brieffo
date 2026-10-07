@@ -1,3 +1,11 @@
 <resources>
     <string name="app_name">Brieffo</string>
+    <string name="widget_match">Prossima partita</string>
+    <string name="widget_match_desc">La prossima partita della tua squadra, o il punteggio di quella in corso</string>
+    <string name="widget_weather">Meteo</string>
+    <string name="widget_weather_desc">Il tempo di adesso con minima, massima e pioggia</string>
+    <string name="widget_agenda">Agenda</string>
+    <string name="widget_agenda_desc">I prossimi impegni di oggi e di domani</string>
+    <string name="widget_summary">Riepilogo</string>
+    <string name="widget_summary_desc">Il riepilogo della tua giornata</string>
 </resources>

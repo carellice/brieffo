@@ -85,5 +85,53 @@
             </intent-filter>
         </receiver>
 
+        <receiver
+            android:name=".widget.MatchWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_match">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_match" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.WeatherWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_weather">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_weather" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.AgendaWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_agenda">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_agenda" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.SummaryWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_summary">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_summary" />
+        </receiver>
+
     </application>
 </manifest>

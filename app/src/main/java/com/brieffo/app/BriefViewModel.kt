@@ -23,6 +23,7 @@ import com.brieffo.app.data.Summary
 import com.brieffo.app.data.UsageRepo
 import com.brieffo.app.data.UsageState
 import com.brieffo.app.data.WeatherRepo
+import com.brieffo.app.widget.WidgetStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -172,6 +173,9 @@ class BriefViewModel(app: Application) : AndroidViewModel(app) {
                         }
                     }
             }
+            // I widget della schermata Home mostrano gli stessi dati appena caricati.
+            val shown = _state.value
+            withContext(Dispatchers.IO) { runCatching { WidgetStore.update(app, shown) } }
         }
     }
 

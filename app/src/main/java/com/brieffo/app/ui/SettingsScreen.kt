@@ -1,6 +1,8 @@
 package com.brieffo.app.ui
 
 import android.Manifest
+import android.appwidget.AppWidgetManager
+import android.content.ComponentName
 import android.content.Intent
 import android.provider.Settings
 import androidx.activity.compose.BackHandler
@@ -42,6 +44,7 @@ import androidx.compose.material.icons.rounded.ImportExport
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.SwapVert
+import androidx.compose.material.icons.rounded.Widgets
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.Commute
@@ -113,6 +116,10 @@ import com.brieffo.app.data.Updater
 import com.brieffo.app.notify.Alarms
 import com.brieffo.app.notify.BriefWorker
 import com.brieffo.app.notify.MatchReminder
+import com.brieffo.app.widget.AgendaWidgetReceiver
+import com.brieffo.app.widget.MatchWidgetReceiver
+import com.brieffo.app.widget.SummaryWidgetReceiver
+import com.brieffo.app.widget.WeatherWidgetReceiver
 import androidx.core.app.NotificationManagerCompat
 import java.time.Instant
 import java.time.LocalDateTime
@@ -802,6 +809,33 @@ fun SettingsScreen(
                 Spacer(Modifier.height(6.dp))
                 Note(if (allowed) "In arrivo tra qualche secondo: è il brief di adesso, come quello giornaliero." else "Inviata, ma con le notifiche bloccate non comparirà.")
             }
+        }
+
+        SettingsSection("Widget", Icons.Rounded.Widgets, "Partita, meteo, agenda e riepilogo sulla Home", "Widget" in openSections, { openSections = if ("Widget" in openSections) openSections - "Widget" else openSections + "Widget" }) {
+            val manager = remember { AppWidgetManager.getInstance(context) }
+            val canPin = remember { manager.isRequestPinAppWidgetSupported }
+            listOf(
+                Triple("Prossima partita", "La prossima gara della tua squadra, o il punteggio di quella in corso", MatchWidgetReceiver::class.java),
+                Triple("Meteo", "Il tempo di adesso con minima, massima e pioggia", WeatherWidgetReceiver::class.java),
+                Triple("Agenda", "I prossimi impegni di oggi e di domani", AgendaWidgetReceiver::class.java),
+                Triple("Riepilogo", "Il riepilogo della giornata, come in cima al brief", SummaryWidgetReceiver::class.java),
+            ).forEach { (label, detail, receiver) ->
+                Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f).padding(end = 10.dp)) {
+                        Text(label, fontSize = 15.sp)
+                        Text(detail, fontSize = 12.sp, lineHeight = 16.sp, color = p.sub)
+                    }
+                    if (canPin) OutlinedButton(onClick = { runCatching { manager.requestPinAppWidget(ComponentName(context, receiver), null, null) } }) {
+                        Text("Aggiungi", color = p.accent)
+                    }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Note(
+                (if (canPin) "\"Aggiungi\" chiede alla schermata Home di mettere lì il widget. " else "") +
+                    "Li trovi anche tenendo premuto su un punto vuoto della Home, alla voce Widget > Brieffo. " +
+                    "Si aggiornano ogni ora circa e ogni volta che apri l'app; un tocco sul widget apre il brief."
+            )
         }
 
         SettingsSection("Backup della configurazione", Icons.Rounded.ImportExport, "Esporta o importa le impostazioni", "Backup della configurazione" in openSections, { openSections = if ("Backup della configurazione" in openSections) openSections - "Backup della configurazione" else openSections + "Backup della configurazione" }) {
