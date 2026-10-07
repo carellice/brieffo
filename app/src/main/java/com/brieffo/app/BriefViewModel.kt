@@ -160,7 +160,7 @@ class BriefViewModel(app: Application) : AndroidViewModel(app) {
                 // Il riepilogo dell'app resta di riserva: finché Gemini scrive, la scheda mostra il caricamento.
                 _state.update { it.copy(loading = false, aiError = null) }
                 val snapshot = _state.value
-                runCatching { withContext(Dispatchers.IO) { Summary.gemini(key, snapshot) } }
+                runCatching { withContext(Dispatchers.IO) { Summary.gemini(key, snapshot, prefs.aiSpeed) } }
                     .onSuccess { text ->
                         prefs.aiSummary = text
                         _state.update { it.copy(summary = text, summaryByAi = true, summaryLoading = false) }

@@ -266,6 +266,7 @@ fun SettingsScreen(
     val time = rememberTimePickerState(prefs.notifyHour, prefs.notifyMinute, is24Hour = true)
     var key by remember { mutableStateOf(prefs.geminiKey) }
     var collapsed by remember { mutableStateOf(prefs.summaryCollapsed) }
+    var aiSpeed by remember { mutableStateOf(prefs.aiSpeed) }
     var railRight by remember { mutableStateOf(prefs.railRight) }
     var testingKey by remember { mutableStateOf(false) }
     var keyTest by remember { mutableStateOf<String?>(null) }
@@ -310,6 +311,7 @@ fun SettingsScreen(
         prefs.notifyMinute = time.minute
         prefs.geminiKey = key
         prefs.summaryCollapsed = collapsed
+        prefs.aiSpeed = aiSpeed
         prefs.railRight = railRight
         prefs.calendarsOn = calOn
         prefs.calendarsOff = calOff
@@ -343,6 +345,7 @@ fun SettingsScreen(
                 time.minute = prefs.notifyMinute
                 key = prefs.geminiKey
                 collapsed = prefs.summaryCollapsed
+                aiSpeed = prefs.aiSpeed
                 railRight = prefs.railRight
                 speechSpeed = prefs.speechSpeed
                 speechVoice = prefs.speechVoice
@@ -756,6 +759,15 @@ fun SettingsScreen(
                         Text("Apri Google AI Studio", color = p.accent)
                     }
                 }
+                Column {
+                    Note("Velocità di scrittura")
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Summary.SPEED_CHOICES.forEach { (value, label, _) ->
+                            FilterChip(selected = aiSpeed == value, onClick = { aiSpeed = value; keyTest = null }, label = { Text(label) })
+                        }
+                    }
+                    Note(Summary.SPEED_CHOICES.first { it.first == aiSpeed }.third + " \"Prova la chiave\" qui sotto usa la velocità scelta e ti dice quanto ci ha messo.")
+                }
                 ToggleRow("Riepilogo chiuso all'apertura", collapsed, detail = "Mostra le prime due righe: il resto si apre con un tocco") { collapsed = it }
                 Field(key, { key = it; keyTest = null }, "Chiave API Gemini (facoltativa)", secret = true)
                 OutlinedButton(
@@ -764,7 +776,11 @@ fun SettingsScreen(
                         keyTest = null
                         pageScope.launch {
                             keyTest = withContext(Dispatchers.IO) {
-                                runCatching { "La chiave funziona: ha risposto ${Summary.testKey(key)}." }.getOrElse { e ->
+                                runCatching {
+                                    val start = System.currentTimeMillis()
+                                    val model = Summary.testKey(key, aiSpeed)
+                                    "La chiave funziona: ha risposto $model in %.1f secondi.".format((System.currentTimeMillis() - start) / 1000f)
+                                }.getOrElse { e ->
                                     val detail = (e as? GeminiException)?.detail?.let { "\nRisposta di Google: $it" }.orEmpty()
                                     "La chiave non funziona: ${e.message ?: "errore sconosciuto"}.$detail"
                                 }

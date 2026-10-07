@@ -92,7 +92,7 @@ object Summary {
     }
 
     /** Riscrive il riepilogo con Gemini (piano gratuito di Google AI Studio, chiave dell'utente). */
-    fun gemini(apiKey: String, s: BriefState): String {
+    fun gemini(apiKey: String, s: BriefState, speed: String = "balanced"): String {
         val health = (s.health as? HealthState.Data)?.health
         val usage = (s.usage as? UsageState.Data)?.usage
         val today = java.time.LocalDate.now()
@@ -173,13 +173,13 @@ object Summary {
             DATI:
         """.trimIndent() + "\n" + data
 
-        return ask(apiKey, prompt).lines().map { it.trim().trimStart('-', '•').trim() }.filter { it.isNotEmpty() }.joinToString("\n")
+        return ask(apiKey, prompt, speed).lines().map { it.trim().trimStart('-', '•').trim() }.filter { it.isNotEmpty() }.joinToString("\n")
     }
 
     /** Prova la chiave con una domanda minima: restituisce il nome del modello che ha risposto. */
-    fun testKey(apiKey: String): String {
+    fun testKey(apiKey: String, speed: String = "balanced"): String {
         var model = ""
-        ask(apiKey, "Rispondi soltanto con la parola: ok") { model = it }
+        ask(apiKey, "Rispondi soltanto con la parola: ok", speed) { model = it }
         return model
     }
 
@@ -251,21 +251,39 @@ object Summary {
     }
 
     /** Manda [prompt] a Gemini e restituisce il testo della risposta. */
-    private fun ask(apiKey: String, prompt: String, onModel: (String) -> Unit = {}): String = withModels(MODELS) { model ->
+    private fun ask(apiKey: String, prompt: String, speed: String, onModel: (String) -> Unit = {}): String {
+        val plan = SPEEDS[speed] ?: SPEEDS.getValue("balanced")
+        return withModels(plan.map { it.first }) { model ->
+            val thinking = plan.first { it.first == model }.second
+            val text = try {
+                askModel(apiKey, prompt, model, thinking)
+            } catch (e: GeminiException) {
+                // Se il modello di turno non accetta quel livello di ragionamento, si riprova lasciandogli il suo.
+                if (thinking == null || !e.badRequest) throw e
+                askModel(apiKey, prompt, model, null)
+            }
+            onModel(model)
+            text
+        }
+    }
+
+    private fun askModel(apiKey: String, prompt: String, model: String, thinking: String?): String {
+        val config = JSONObject().put("temperature", 0.7).put("maxOutputTokens", 4096)
+        if (thinking != null) config.put("thinkingConfig", JSONObject().put("thinkingLevel", thinking))
         val body = JSONObject()
             .put("contents", JSONArray().put(JSONObject().put("parts", JSONArray().put(JSONObject().put("text", prompt)))))
-            .put("generationConfig", JSONObject().put("temperature", 0.7).put("maxOutputTokens", 4096))
+            .put("generationConfig", config)
         val r = post("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent", apiKey, body, model)
         val candidate = r.optJSONArray("candidates")?.optJSONObject(0)
         val parts = candidate?.optJSONObject("content")?.optJSONArray("parts")
-        val text = (0 until (parts?.length() ?: 0)).joinToString("") { parts!!.getJSONObject(it).optString("text") }.replace("*", "").trim()
+        val text = (0 until (parts?.length() ?: 0)).map { parts!!.getJSONObject(it) }.filter { !it.optBoolean("thought") }
+            .joinToString("") { it.optString("text") }.replace("*", "").trim()
         if (text.isEmpty()) {
             val reason = candidate?.optString("finishReason")?.takeIf { it.isNotBlank() }
                 ?: r.optJSONObject("promptFeedback")?.optString("blockReason")?.takeIf { it.isNotBlank() }
             throw GeminiException("Gemini ha risposto senza testo", reason?.let { "Motivo: $it" }, retryOtherModel = true)
         }
-        onModel(model)
-        text
+        return text
     }
 
     /** Prova i modelli in ordine: se uno non esiste più, è sovraccarico o ha finito la quota gratuita, si passa al successivo. */
@@ -311,7 +329,7 @@ object Summary {
                     code == 400 && badKey -> GeminiException("la chiave API non è valida", detail)
                     code == 400 && status == "FAILED_PRECONDITION" ->
                         GeminiException("il piano gratuito di Gemini non è disponibile per questa chiave: va attivata la fatturazione su Google AI Studio", detail)
-                    code == 400 -> GeminiException("richiesta rifiutata da Gemini", detail)
+                    code == 400 -> GeminiException("richiesta rifiutata da Gemini", detail, badRequest = true)
                     code == 401 || code == 403 -> GeminiException("la chiave non è autorizzata a usare Gemini", detail)
                     code == 404 -> GeminiException("il modello $model non è disponibile", detail, retryOtherModel = true)
                     code == 429 -> GeminiException("limite gratuito raggiunto, riprova tra poco", detail, retryOtherModel = true)
@@ -328,9 +346,28 @@ object Summary {
     const val SPEECH_RATE = 24_000
 
     /** Dal più capace al più leggero: i nomi "latest" seguono da soli le nuove versioni. */
-    private val MODELS = listOf("gemini-flash-latest", "gemini-flash-lite-latest")
+    private const val FLASH = "gemini-flash-latest"
+    private const val LITE = "gemini-flash-lite-latest"
+
+    /**
+     * Per ogni velocità, i modelli da provare in ordine e quanto farli ragionare prima di scrivere (null = quanto
+     * decide il modello). Il tempo di attesa dipende quasi tutto da questo: il modello leggero che non ragiona
+     * risponde in un paio di secondi, quello completo che ragiona può metterci molto di più.
+     */
+    private val SPEEDS = mapOf(
+        "fast" to listOf(LITE to null, FLASH to "low"),
+        "balanced" to listOf(FLASH to "low", LITE to null),
+        "careful" to listOf(FLASH to null, LITE to null),
+    )
+
+    /** Velocità proposte nelle impostazioni: chiave, nome e che cosa comporta. */
+    val SPEED_CHOICES = listOf(
+        Triple("fast", "Veloce", "Il modello più leggero: risponde in pochi secondi, con un testo un po' più semplice."),
+        Triple("balanced", "Bilanciato", "Il modello completo con poco ragionamento: buon testo senza attese lunghe."),
+        Triple("careful", "Curato", "Il modello completo che ragiona quanto vuole: il testo migliore, ma può metterci parecchio."),
+    )
     private val SPEECH_MODELS = listOf("gemini-3.8-flash-tts", "gemini-3.8-flash-lite-tts")
 }
 
 /** Errore di Gemini: [message] è la spiegazione breve in italiano, [detail] quello che ha risposto Google. */
-class GeminiException(message: String, val detail: String? = null, val retryOtherModel: Boolean = false) : Exception(message)
+class GeminiException(message: String, val detail: String? = null, val retryOtherModel: Boolean = false, val badRequest: Boolean = false) : Exception(message)

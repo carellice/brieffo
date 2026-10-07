@@ -128,6 +128,11 @@ class Prefs(ctx: Context) {
         get() = sp.getBoolean("railRight", false)
         set(v) = sp.edit { putBoolean("railRight", v) }
 
+    /** Quanto in fretta deve scrivere Gemini: "fast", "balanced" oppure "careful" (vedi Summary.SPEED_CHOICES). */
+    var aiSpeed: String
+        get() = sp.getString("aiSpeed", "balanced") ?: "balanced"
+        set(v) = sp.edit { putString("aiSpeed", v) }
+
     /** Vero se il riepilogo di Gemini parte chiuso, con solo le prime righe in vista. */
     var summaryCollapsed: Boolean
         get() = sp.getBoolean("summaryCollapsed", false)
@@ -220,7 +225,7 @@ class Prefs(ctx: Context) {
 
     private companion object {
         const val BACKUP_APP = "brieffo"
-        val BACKUP_STRINGS = setOf("name", "city", "geminiKey", "feeds", "themeMode", "team", "teamRef", "workAddress", "travelMode", "cardOrder", "speechVoice", "speechEngine", "localVoice")
+        val BACKUP_STRINGS = setOf("name", "city", "geminiKey", "feeds", "themeMode", "team", "teamRef", "workAddress", "travelMode", "cardOrder", "speechVoice", "speechEngine", "localVoice", "aiSpeed")
         val BACKUP_INTS = setOf("stepGoal", "notifyHour", "notifyMinute", "accent", "speechSpeed")
         val BACKUP_BOOLEANS = setOf("notifyEnabled", "summaryCollapsed", "railRight")
         val BACKUP_SETS = setOf("hidden")
