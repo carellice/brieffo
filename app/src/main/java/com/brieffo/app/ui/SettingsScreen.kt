@@ -49,6 +49,7 @@ import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.Newspaper
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.RecordVoiceOver
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SportsSoccer
@@ -108,6 +109,7 @@ import com.brieffo.app.data.Prefs
 import com.brieffo.app.data.SportRepo
 import com.brieffo.app.data.Summary
 import com.brieffo.app.data.TeamRef
+import com.brieffo.app.data.Updater
 import com.brieffo.app.notify.Alarms
 import com.brieffo.app.notify.BriefWorker
 import com.brieffo.app.notify.MatchReminder
@@ -133,6 +135,7 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.vector.ImageVector
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -175,6 +178,91 @@ internal fun ToggleRow(label: String, checked: Boolean, detail: String? = null, 
 @Composable
 internal fun Note(text: String) {
     Text(text, fontSize = 12.sp, lineHeight = 17.sp, color = LocalPalette.current.sub)
+}
+
+/**
+ * Riquadro in fondo alle impostazioni: ogni volta che si apre la pagina controlla se su GitHub è uscita
+ * una versione più recente e, se c'è, la scarica e la passa all'installatore di Android.
+ */
+@Composable
+private fun UpdateCard() {
+    val p = LocalPalette.current
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val installed = remember { Updater.installed(context) }
+    var checking by remember { mutableStateOf(true) }
+    var release by remember { mutableStateOf<Updater.Release?>(null) }
+    var progress by remember { mutableStateOf<Int?>(null) }
+    var message by remember { mutableStateOf<String?>(null) }
+    var checks by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(checks) {
+        checking = true
+        val found = withContext(Dispatchers.IO) { runCatching { Updater.latest() } }
+        release = found.getOrNull()?.takeIf { Updater.isNewer(it.version, installed) }
+        message = if (found.isFailure) "Non riesco a controllare gli aggiornamenti: serve la connessione." else null
+        checking = false
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(28.dp),
+        color = p.card,
+        contentColor = p.text,
+        border = BorderStroke(1.dp, if (release != null) p.accent else p.stroke),
+    ) {
+        Column(Modifier.padding(20.dp)) {
+            val found = release
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        if (found != null) "Disponibile Brieffo ${found.version}" else "Brieffo $installed",
+                        fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        when {
+                            checking -> "Controllo se c'è una versione nuova…"
+                            found != null -> "Hai la $installed · %.0f MB da scaricare".format(found.bytes / 1_000_000f)
+                            message != null -> "Versione installata"
+                            else -> "È la versione più recente"
+                        },
+                        fontSize = 12.sp, lineHeight = 16.sp, color = p.sub,
+                    )
+                }
+                if (checking) CircularProgressIndicator(Modifier.size(18.dp), color = p.accent, strokeWidth = 2.dp)
+                else if (found == null) IconButton(onClick = { checks++ }) { Icon(Icons.Rounded.Refresh, "Controlla di nuovo", tint = p.sub) }
+            }
+            if (found != null) {
+                Button(
+                    onClick = {
+                        message = null
+                        progress = 0
+                        scope.launch {
+                            val apk = withContext(Dispatchers.IO) {
+                                runCatching { Updater.download(context, found, active = { isActive }) { progress = it } }
+                            }
+                            progress = null
+                            apk.onSuccess { file ->
+                                runCatching { Updater.install(context, file) }
+                                    .onFailure { message = "Non riesco ad aprire l'installatore di Android." }
+                            }.onFailure { e ->
+                                if (e !is InterruptedException) message = "Aggiornamento non scaricato: ${e.message ?: "connessione non riuscita"}."
+                            }
+                        }
+                    },
+                    enabled = progress == null,
+                    colors = ButtonDefaults.buttonColors(containerColor = p.accent, contentColor = p.onAccent),
+                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                ) { Text(progress?.let { "Scarico… $it%" } ?: "Aggiorna") }
+                Spacer(Modifier.height(8.dp))
+                Note("Finito il download Android chiede conferma. La prima volta va consentito a Brieffo di installare app: poi impostazioni e dati restano come sono.")
+            }
+            message?.let {
+                Spacer(Modifier.height(8.dp))
+                Note(it)
+            }
+        }
+    }
 }
 
 /**
@@ -808,6 +896,7 @@ fun SettingsScreen(
         OutlinedButton(onClick = onReplayOnboarding, modifier = Modifier.fillMaxWidth()) {
             Text("Rivedi la presentazione iniziale", color = p.accent)
         }
+        UpdateCard()
         Note("Fonti dei dati: Open-Meteo, MeteoAlarm, BCE, CoinGecko, Wikipedia, OpenStreetMap, ESPN, TheSportsDB.")
         Spacer(Modifier.height(NavBarSpace))
     }

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Cartella da cui l'installatore di Android può leggere l'aggiornamento scaricato. -->
+<paths>
+    <cache-path name="updates" path="updates/" />
+</paths>

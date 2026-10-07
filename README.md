@@ -99,6 +99,7 @@ Sono tutti facoltativi: ciò che non consenti resta semplicemente vuoto.
 | Calendario (modifica) | Solo per chiedere ad Android di scaricare i calendari che accendi |
 | Contatti | Compleanni in arrivo |
 | Notifiche | Brief giornaliero e promemoria della partita |
+| Installazione di app | Solo per installare gli aggiornamenti di Brieffo scaricati da GitHub |
 | Sveglie e avvio al riavvio | Far arrivare le notifiche all'ora esatta, anche dopo aver riacceso il telefono |
 | Health Connect | Passi, sonno, battito, calorie, distanza |
 | Accesso ai dati di utilizzo | Tempo passato al telefono |
@@ -110,6 +111,9 @@ Brieffo non è sul Play Store: si installa dal file APK.
 1. Copia `Brieffo.apk` sul telefono e aprilo.
 2. Consenti l'installazione da questa origine quando Android lo chiede.
 3. Apri l'app e segui la presentazione.
+
+Gli aggiornamenti successivi si fanno dall'app: in fondo alle impostazioni Brieffo controlla da solo
+se su GitHub è uscita una versione nuova e, con un tocco, la scarica e la installa.
 
 > **Tempo di utilizzo:** Android blocca questo accesso alle app installate da file.
 > Per sbloccarlo apri *Info app* di Brieffo, tocca i tre puntini in alto a destra e scegli
