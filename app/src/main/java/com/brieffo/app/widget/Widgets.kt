@@ -8,11 +8,15 @@ import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
 import androidx.glance.GlanceTheme
+import androidx.glance.LocalSize
 import androidx.glance.Image
 import androidx.glance.ImageProvider
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
+import androidx.glance.appwidget.SizeMode
+import androidx.glance.appwidget.lazy.LazyColumn
+import androidx.glance.appwidget.lazy.items
 import androidx.glance.action.actionStartActivity
 import androidx.glance.appwidget.cornerRadius
 import androidx.glance.appwidget.provideContent
@@ -105,12 +109,13 @@ private fun faint(size: Int = 12) = TextStyle(color = GlanceTheme.colors.onSurfa
 private fun Frame(
     alignment: Alignment.Horizontal = Alignment.Start,
     vertical: Alignment.Vertical = Alignment.CenterVertically,
+    padding: Int = 14,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     GlanceTheme {
         Column(
             GlanceModifier.fillMaxSize().background(GlanceTheme.colors.widgetBackground).cornerRadius(24.dp)
-                .padding(14.dp).clickable(actionStartActivity<MainActivity>()),
+                .padding(padding.dp).clickable(actionStartActivity<MainActivity>()),
             horizontalAlignment = alignment, verticalAlignment = vertical, content = content,
         )
     }
@@ -125,6 +130,9 @@ private fun Empty(label: String, text: String) = Frame {
 
 /** Prossima partita della squadra, oppure quella in corso con il punteggio. */
 class MatchWidget : GlanceAppWidget() {
+    // Il disegno dipende dalle misure reali: alto una sola riga della Home diventa una striscia.
+    override val sizeMode = SizeMode.Exact
+
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val data = WidgetStore.load(context)
         val home = runCatching { BitmapFactory.decodeFile(WidgetStore.logo(context, true).path) }.getOrNull()
@@ -136,6 +144,28 @@ class MatchWidget : GlanceAppWidget() {
                 return@provideContent
             }
             val played = m.homeScore != null && m.awayScore != null
+            if (LocalSize.current.height < 150.dp) {
+                // Striscia: stemma e nome ai lati, in mezzo giorno e ora (o il punteggio).
+                Frame(Alignment.CenterHorizontally, padding = 8) {
+                    Row(GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        if (home != null) Image(ImageProvider(home), null, GlanceModifier.size(30.dp))
+                        Text(m.home, style = body(13, bold = true), maxLines = 1, modifier = GlanceModifier.defaultWeight().padding(start = 6.dp))
+                        Column(GlanceModifier.padding(horizontal = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                if (m.live) "In corso" else m.date?.let { dayLabel(it.toLocalDate()) } ?: "",
+                                style = if (m.live) title() else faint(11), maxLines = 1,
+                            )
+                            Text(if (played) "${m.homeScore} – ${m.awayScore}" else m.date?.format(hm) ?: "vs", style = body(17, bold = true), maxLines = 1)
+                        }
+                        Text(
+                            m.away, style = body(13, bold = true).copy(textAlign = TextAlign.End), maxLines = 1,
+                            modifier = GlanceModifier.defaultWeight().padding(end = 6.dp),
+                        )
+                        if (away != null) Image(ImageProvider(away), null, GlanceModifier.size(30.dp))
+                    }
+                }
+                return@provideContent
+            }
             Frame(Alignment.CenterHorizontally) {
                 Text(
                     listOfNotNull(if (m.live) "In corso" else "Prossima partita", m.league.takeIf { it.isNotBlank() }).joinToString(" · ").uppercase(),
@@ -219,8 +249,20 @@ class AgendaWidget : GlanceAppWidget() {
     }
 }
 
-/** Il riepilogo della giornata, lo stesso che apre il brief. */
+/**
+ * Stima se [lines], scritte a [font] punti, stanno in un riquadro largo [width] e alto [height] (in dp):
+ * nei widget non si può misurare il testo, quindi si conta quante righe occuperà ogni capoverso.
+ */
+private fun fits(lines: List<String>, width: Float, height: Float, font: Int): Boolean {
+    val perRow = (width / (font * 0.5f)).toInt().coerceAtLeast(1)
+    val rows = lines.sumOf { (it.length + perRow - 1) / perRow }
+    return rows * font * 1.32f + (lines.size - 1) * 4f <= height
+}
+
+/** Il riepilogo della giornata, lo stesso che apre il brief: il testo si ingrandisce o si stringe con il widget. */
 class SummaryWidget : GlanceAppWidget() {
+    override val sizeMode = SizeMode.Exact
+
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val data = WidgetStore.load(context)
         provideContent {
@@ -228,10 +270,28 @@ class SummaryWidget : GlanceAppWidget() {
                 Empty("Riepilogo", "Apri Brieffo per preparare il riepilogo.")
                 return@provideContent
             }
-            Frame(vertical = Alignment.Top) {
-                Text("RIEPILOGO", style = title())
-                Spacer(GlanceModifier.height(6.dp))
-                Text(data.summary, style = body(13), maxLines = 12)
+            val size = LocalSize.current
+            val lines = data.summary.lines().map { it.trim() }.filter { it.isNotEmpty() }
+            // Nei formati bassi il titolo lascia il posto al testo e i margini si stringono.
+            val small = size.height < 150.dp
+            val padding = if (small) 10 else 14
+            val width = size.width.value - padding * 2
+            val height = size.height.value - padding * 2 - if (small) 0 else 24
+            // Il carattere più grande con cui il testo entra tutto; se non entra nemmeno al minimo, si scorre.
+            val font = (20 downTo 11).firstOrNull { fits(lines, width, height, it) } ?: 11
+            Frame(vertical = Alignment.Top, padding = padding) {
+                if (!small) {
+                    Text("RIEPILOGO", style = title())
+                    Spacer(GlanceModifier.height(6.dp))
+                }
+                LazyColumn(GlanceModifier.fillMaxSize()) {
+                    items(lines) { line ->
+                        Text(
+                            line, style = body(font),
+                            modifier = GlanceModifier.fillMaxWidth().padding(bottom = 4.dp).clickable(actionStartActivity<MainActivity>()),
+                        )
+                    }
+                }
             }
         }
     }
