@@ -70,6 +70,7 @@ della giornata oppure, se preferisci, lo decidi tu dalle impostazioni.
 - **Aggiornamento misurato**: il brief si ricarica da solo ogni quattro ore; quando vuoi dati freschi, trascina verso il basso.
 - **Widget per la Home**: prossima partita, meteo, agenda e riepilogo, da aggiungere dalle impostazioni o dal menu dei widget di Android.
 - **Backup della configurazione**: esporta tutto in un file e importalo sul telefono nuovo.
+- **Meteo animato**: il sole gira e manda riflessi, pioggia e neve cadono sulla scheda, i temporali lampeggiano. Si può spegnere dalle impostazioni.
 - **Icone disegnate su misura** per il meteo e la fase lunare.
 
 ## Riepilogo con l'intelligenza artificiale

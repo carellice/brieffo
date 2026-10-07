@@ -208,6 +208,8 @@ data class BriefState(
     val summaryLoading: Boolean = false,
     /** Vero se il riepilogo di Gemini va mostrato chiuso finché l'utente non lo apre. */
     val summaryCollapsed: Boolean = false,
+    /** Vero se l'icona e la scheda del meteo si muovono secondo il tempo che fa. */
+    val weatherAnimated: Boolean = true,
     /** Vero se l'indice laterale delle schede sta a destra invece che a sinistra. */
     val railRight: Boolean = false,
     val aiError: String? = null,

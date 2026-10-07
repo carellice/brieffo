@@ -265,9 +265,14 @@ fun SummaryCard(s: BriefState) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun WeatherCard(w: Weather?, loaded: Boolean, alerts: List<WxAlert>, showPollen: Boolean, onSetup: () -> Unit) {
+fun WeatherCard(w: Weather?, loaded: Boolean, alerts: List<WxAlert>, showPollen: Boolean, animated: Boolean, onSetup: () -> Unit) {
     val p = LocalPalette.current
-    BriefCard(title = w?.place ?: "Meteo", icon = Icons.Rounded.Place) {
+    // Il meteo di adesso prende vita: l'icona si muove e sulla scheda passa il tempo che fa.
+    val clock = if (animated && w != null) rememberWeatherClock() else null
+    BriefCard(
+        title = w?.place ?: "Meteo", icon = Icons.Rounded.Place,
+        modifier = if (clock != null && w != null) Modifier.weatherAtmosphere(w.code, w.isDay, clock, p.text) else Modifier,
+    ) {
         if (w == null) {
             Hint(if (loaded) "Non riesco a trovare la tua posizione. Consenti l'accesso alla posizione oppure imposta una città." else "Carico il meteo…")
             if (loaded) ActionButton("Imposta", onSetup)
@@ -275,7 +280,7 @@ fun WeatherCard(w: Weather?, loaded: Boolean, alerts: List<WxAlert>, showPollen:
         }
         AlertBanner(alerts)
         Row(verticalAlignment = Alignment.CenterVertically) {
-            WeatherIcon(w.code, w.isDay, size = 64.dp)
+            if (clock != null) AnimatedWeatherIcon(w.code, w.isDay, clock, size = 64.dp) else WeatherIcon(w.code, w.isDay, size = 64.dp)
             Spacer(Modifier.width(14.dp))
             Text(w.temp.deg(), fontSize = 64.sp, fontWeight = FontWeight.Light)
             Spacer(Modifier.width(14.dp))

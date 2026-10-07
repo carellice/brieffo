@@ -123,6 +123,11 @@ class Prefs(ctx: Context) {
         get() = sp.getInt("speechSpeed", 100)
         set(v) = sp.edit { putInt("speechSpeed", v.coerceIn(60, 160)) }
 
+    /** Vero se il meteo del brief è animato (sole che gira, pioggia e neve che cadono, lampi). */
+    var weatherAnimated: Boolean
+        get() = sp.getBoolean("weatherAnimated", true)
+        set(v) = sp.edit { putBoolean("weatherAnimated", v) }
+
     /** Vero se l'indice delle schede sta sul bordo destro (comodo per chi usa il telefono con la destra). */
     var railRight: Boolean
         get() = sp.getBoolean("railRight", false)
@@ -227,7 +232,7 @@ class Prefs(ctx: Context) {
         const val BACKUP_APP = "brieffo"
         val BACKUP_STRINGS = setOf("name", "city", "geminiKey", "feeds", "themeMode", "team", "teamRef", "workAddress", "travelMode", "cardOrder", "speechVoice", "speechEngine", "localVoice", "aiSpeed")
         val BACKUP_INTS = setOf("stepGoal", "notifyHour", "notifyMinute", "accent", "speechSpeed")
-        val BACKUP_BOOLEANS = setOf("notifyEnabled", "summaryCollapsed", "railRight")
+        val BACKUP_BOOLEANS = setOf("notifyEnabled", "summaryCollapsed", "railRight", "weatherAnimated")
         val BACKUP_SETS = setOf("hidden")
     }
 }

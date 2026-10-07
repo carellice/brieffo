@@ -363,6 +363,7 @@ fun SettingsScreen(
     var collapsed by remember { mutableStateOf(prefs.summaryCollapsed) }
     var aiSpeed by remember { mutableStateOf(prefs.aiSpeed) }
     var railRight by remember { mutableStateOf(prefs.railRight) }
+    var weatherAnimated by remember { mutableStateOf(prefs.weatherAnimated) }
     var testingKey by remember { mutableStateOf(false) }
     var keyTest by remember { mutableStateOf<String?>(null) }
     var calOn by remember { mutableStateOf(prefs.calendarsOn) }
@@ -408,6 +409,7 @@ fun SettingsScreen(
         prefs.summaryCollapsed = collapsed
         prefs.aiSpeed = aiSpeed
         prefs.railRight = railRight
+        prefs.weatherAnimated = weatherAnimated
         prefs.calendarsOn = calOn
         prefs.calendarsOff = calOff
     }
@@ -442,6 +444,7 @@ fun SettingsScreen(
                 collapsed = prefs.summaryCollapsed
                 aiSpeed = prefs.aiSpeed
                 railRight = prefs.railRight
+                weatherAnimated = prefs.weatherAnimated
                 speechSpeed = prefs.speechSpeed
                 speechVoice = prefs.speechVoice
                 speechEngine = prefs.speechEngine
@@ -498,6 +501,8 @@ fun SettingsScreen(
                     FilterChip(selected = railRight == value, onClick = { railRight = value }, label = { Text(label) })
                 }
             }
+            Spacer(Modifier.height(6.dp))
+            ToggleRow("Meteo animato", weatherAnimated, detail = "Sole, pioggia, neve e lampi si muovono nella scheda del meteo") { weatherAnimated = it }
             Spacer(Modifier.height(10.dp))
             Note("Colore primario")
             FlowRow(

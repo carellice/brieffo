@@ -110,7 +110,7 @@ fun BriefScreen(s: BriefState, actions: BriefActions, scroll: ScrollState = reme
             val all = mapOf<String, @Composable () -> Unit>(
                 CardKeys.WEATHER to {
                     WeatherCard(
-                        s.weather, s.weatherLoaded, s.alerts, s.shows(CardKeys.POLLEN),
+                        s.weather, s.weatherLoaded, s.alerts, s.shows(CardKeys.POLLEN), s.weatherAnimated,
                         if (s.weatherLoaded && s.weather == null) actions.openSettings else actions.grantBasics,
                     )
                 },
