@@ -346,7 +346,8 @@ fun SettingsScreen(
     var team by remember { mutableStateOf(prefs.team) }
     var teamRef by remember { mutableStateOf(prefs.teamRef) }
     var work by remember { mutableStateOf(prefs.workAddress) }
-    var mode by remember { mutableStateOf(prefs.travelMode) }
+    var workPoint by remember { mutableStateOf(prefs.workPoint?.let { "${it.first},${it.second}" } ?: "") }
+    var modes by remember { mutableStateOf(prefs.travelModes) }
     var notify by remember { mutableStateOf(prefs.notifyEnabled) }
     var speechSpeed by remember { mutableIntStateOf(prefs.speechSpeed) }
     var speechVoice by remember { mutableStateOf(prefs.speechVoice) }
@@ -401,7 +402,8 @@ fun SettingsScreen(
         prefs.team = team
         prefs.teamRef = teamRef
         prefs.workAddress = work
-        prefs.travelMode = mode
+        prefs.workPoint = workPoint.split(',').mapNotNull { it.toDoubleOrNull() }.takeIf { it.size == 2 }?.let { it[0] to it[1] }
+        prefs.travelModes = modes
         prefs.notifyEnabled = notify
         prefs.notifyHour = time.hour
         prefs.notifyMinute = time.minute
@@ -436,7 +438,8 @@ fun SettingsScreen(
                 team = prefs.team
                 teamRef = prefs.teamRef
                 work = prefs.workAddress
-                mode = prefs.travelMode
+                workPoint = prefs.workPoint?.let { "${it.first},${it.second}" } ?: ""
+                modes = prefs.travelModes
                 notify = prefs.notifyEnabled
                 time.hour = prefs.notifyHour
                 time.minute = prefs.notifyMinute
@@ -665,12 +668,7 @@ fun SettingsScreen(
         }
 
         if (CardKeys.TRAVEL !in hidden) SettingsSection("Spostamenti", Icons.Rounded.Commute, work.ifBlank { "Indirizzo non impostato" }, "Spostamenti" in openSections, { openSections = if ("Spostamenti" in openSections) openSections - "Spostamenti" else openSections + "Spostamenti" }) {
-            Field(work, { work = it }, "Indirizzo del lavoro", hint = "Via, numero e città. Lascia vuoto se non ti serve")
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf("car" to "In auto", "bike" to "In bici", "foot" to "A piedi").forEach { (value, label) ->
-                    FilterChip(selected = mode == value, onClick = { mode = value }, label = { Text(label) })
-                }
-            }
+            TravelSetup(work, workPoint, modes, "Via, numero e città. Lascia vuoto se non ti serve", { address, point -> work = address; workPoint = point }) { modes = it }
         }
 
         SettingsSection("Lettura ad alta voce", Icons.Rounded.RecordVoiceOver, when (speechEngine) { "local" -> "Voce locale"; "gemini" -> "Voce di Gemini"; else -> "Voce del telefono" } + " · %.1f×".format(speechSpeed / 100f), "Lettura ad alta voce" in openSections, { openSections = if ("Lettura ad alta voce" in openSections) openSections - "Lettura ad alta voce" else openSections + "Lettura ad alta voce" }) {
@@ -936,7 +934,7 @@ fun SettingsScreen(
             Text("Rivedi la presentazione iniziale", color = p.accent)
         }
         UpdateCard()
-        Note("Fonti dei dati: Open-Meteo, MeteoAlarm, BCE, CoinGecko, Wikipedia, OpenStreetMap, ESPN, TheSportsDB.")
+        Note("Fonti dei dati: Open-Meteo, MeteoAlarm, BCE, CoinGecko, Wikipedia, OpenStreetMap (mappa, indirizzi e percorsi), Transitous (mezzi pubblici), ESPN, TheSportsDB.")
         Spacer(Modifier.height(NavBarSpace))
     }
 }

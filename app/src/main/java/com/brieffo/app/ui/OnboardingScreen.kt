@@ -178,7 +178,8 @@ fun OnboardingScreen(prefs: Prefs, onGrantBasics: () -> Unit, onConnectHealth: (
     var team by remember { mutableStateOf(prefs.team) }
     var teamRef by remember { mutableStateOf(prefs.teamRef) }
     var work by remember { mutableStateOf(prefs.workAddress) }
-    var mode by remember { mutableStateOf(prefs.travelMode) }
+    var workPoint by remember { mutableStateOf(prefs.workPoint?.let { "${it.first},${it.second}" } ?: "") }
+    var modes by remember { mutableStateOf(prefs.travelModes) }
     var notify by remember { mutableStateOf(prefs.notifyEnabled) }
     var pickTime by remember { mutableStateOf(false) }
     val time = rememberTimePickerState(prefs.notifyHour, prefs.notifyMinute, is24Hour = true)
@@ -205,7 +206,8 @@ fun OnboardingScreen(prefs: Prefs, onGrantBasics: () -> Unit, onConnectHealth: (
         prefs.team = team
         prefs.teamRef = teamRef
         prefs.workAddress = work
-        prefs.travelMode = mode
+        prefs.workPoint = workPoint.split(',').mapNotNull { it.toDoubleOrNull() }.takeIf { it.size == 2 }?.let { it[0] to it[1] }
+        prefs.travelModes = modes
         prefs.notifyEnabled = notify
         prefs.notifyHour = time.hour
         prefs.notifyMinute = time.minute
@@ -307,12 +309,7 @@ fun OnboardingScreen(prefs: Prefs, onGrantBasics: () -> Unit, onConnectHealth: (
                         if (CardKeys.SPORT !in hidden && CardKeys.TRAVEL !in hidden) Spacer(Modifier.height(12.dp))
                         if (CardKeys.TRAVEL !in hidden) Panel {
                             Text("Dove lavori o studi", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                            Field(work, { work = it }, "Indirizzo", hint = "Via, numero e città: ti dirò quanto ci metti ad arrivare")
-                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                listOf("car" to "In auto", "bike" to "In bici", "foot" to "A piedi").forEach { (value, label) ->
-                                    FilterChip(selected = mode == value, onClick = { mode = value }, label = { Text(label) })
-                                }
-                            }
+                            TravelSetup(work, workPoint, modes, "Via, numero e città: ti dirò quanto ci metti ad arrivare", { address, point -> work = address; workPoint = point }) { modes = it }
                         }
                         if (CardKeys.SPORT in hidden && CardKeys.TRAVEL in hidden) Panel {
                             Text("Hai spento sia la squadra sia gli spostamenti: qui non c'è nulla da impostare.", fontSize = 14.sp, color = p.sub)

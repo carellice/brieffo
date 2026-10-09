@@ -1,5 +1,7 @@
 package com.brieffo.app.data
 
+import java.time.temporal.ChronoUnit
+import java.time.format.DateTimeFormatter
 import android.Manifest
 import android.app.AlarmManager
 import android.content.Context
@@ -83,6 +85,56 @@ object TravelRepo {
         return lat to lon
     }
 
+    /** Mezzi con cui si può calcolare un tragitto, nell'ordine in cui vengono mostrati. */
+    val MODES = linkedMapOf("car" to "In auto", "transit" to "Mezzi pubblici", "bike" to "In bici", "foot" to "A piedi")
+
+    private fun label(o: JSONObject): String {
+        val street = listOfNotNull(o.optString("street").takeIf { it.isNotBlank() }, o.optString("housenumber").takeIf { it.isNotBlank() }).joinToString(" ")
+        val city = listOfNotNull(o.optString("postcode").takeIf { it.isNotBlank() }, (o.optString("city").ifBlank { o.optString("county") }).takeIf { it.isNotBlank() }).joinToString(" ")
+        return listOf(o.optString("name"), street, city, o.optString("state")).filter { it.isNotBlank() }.distinct().joinToString(", ")
+    }
+
+    /** Suggerimenti di indirizzi per [query] dal catalogo di OpenStreetMap (Photon); con [near] vengono prima quelli vicini. */
+    fun search(query: String, near: Place? = null): List<Address> {
+        val bias = near?.let { "&lat=${it.lat}&lon=${it.lon}" } ?: ""
+        val r = JSONObject(httpGet("https://photon.komoot.io/api?q=${enc(query.trim())}&limit=6$bias"))
+        val features = r.optJSONArray("features") ?: return emptyList()
+        return (0 until features.length()).mapNotNull { i ->
+            val f = features.getJSONObject(i)
+            val c = f.optJSONObject("geometry")?.optJSONArray("coordinates") ?: return@mapNotNull null
+            val text = label(f.optJSONObject("properties") ?: return@mapNotNull null)
+            if (text.isBlank()) null else Address(text, c.getDouble(1), c.getDouble(0))
+        }.distinctBy { it.label }
+    }
+
+    /**
+     * Ricerca precisa di un indirizzo completo (Nominatim), per quando l'utente preme "cerca": trova anche i numeri
+     * civici che i suggerimenti mentre si scrive a volte mancano. Non va usata a ogni lettera digitata.
+     */
+    fun searchExact(query: String): List<Address> {
+        val r = JSONArray(httpGet("https://nominatim.openstreetmap.org/search?q=${enc(query.trim())}&format=jsonv2&limit=5&accept-language=it&addressdetails=1"))
+        return (0 until r.length()).mapNotNull { i ->
+            val o = r.getJSONObject(i)
+            val a = o.optJSONObject("address") ?: JSONObject()
+            val street = listOfNotNull(a.optString("road").takeIf { it.isNotBlank() }, a.optString("house_number").takeIf { it.isNotBlank() }).joinToString(" ")
+            val city = listOf("city", "town", "village", "municipality").firstNotNullOfOrNull { k -> a.optString(k).takeIf { it.isNotBlank() } }
+            val text = listOfNotNull(
+                o.optString("name").takeIf { it.isNotBlank() && it != a.optString("road") }, street.takeIf { it.isNotBlank() },
+                listOfNotNull(a.optString("postcode").takeIf { it.isNotBlank() }, city).joinToString(" ").takeIf { it.isNotBlank() },
+                a.optString("state").takeIf { it.isNotBlank() },
+            ).distinct().joinToString(", ").ifBlank { o.optString("display_name") }
+            val lat = o.optString("lat").toDoubleOrNull() ?: return@mapNotNull null
+            val lon = o.optString("lon").toDoubleOrNull() ?: return@mapNotNull null
+            Address(text, lat, lon)
+        }.distinctBy { it.label }
+    }
+
+    /** L'indirizzo più vicino a un punto della mappa. */
+    fun reverse(lat: Double, lon: Double): String? {
+        val r = JSONObject(httpGet("https://photon.komoot.io/reverse?lat=$lat&lon=$lon"))
+        return r.optJSONArray("features")?.optJSONObject(0)?.optJSONObject("properties")?.let(::label)?.takeIf { it.isNotBlank() }
+    }
+
     private fun route(mode: String, from: Place, to: Pair<Double, Double>): Pair<Long, Double>? {
         val profile = when (mode) { "bike" -> "routed-bike"; "foot" -> "routed-foot"; else -> "routed-car" }
         val r = JSONObject(httpGet("https://routing.openstreetmap.de/$profile/route/v1/driving/${from.lon},${from.lat};${to.second},${to.first}?overview=false"))
@@ -90,22 +142,69 @@ object TravelRepo {
         return (route.getDouble("duration") / 60).roundToLong() to route.getDouble("distance") / 1000
     }
 
-    /** Tempi stimati (senza traffico) verso il lavoro e verso il prossimo impegno di oggi che ha un luogo. */
+    private class Ride(val minutes: Long, val departure: LocalDateTime, val lines: String)
+
+    /**
+     * Tragitto con i mezzi pubblici da Transitous, che raccoglie gli orari pubblicati dalle aziende di trasporto.
+     * Senza [arriveBy] si parte adesso e vince chi arriva prima (il tempo comprende l'attesa);
+     * con [arriveBy] vince la partenza più tarda che arriva comunque in orario.
+     */
+    private fun transit(from: Place, to: Pair<Double, Double>, arriveBy: LocalDateTime? = null): Ride? {
+        val zone = ZoneId.systemDefault()
+        val now = Instant.now()
+        val time = arriveBy?.atZone(zone)?.toInstant() ?: now.plusSeconds(60)
+        val r = JSONObject(
+            httpGet(
+                "https://api.transitous.org/api/v5/plan?fromPlace=${from.lat},${from.lon}&toPlace=${to.first},${to.second}" +
+                    "&time=${time.truncatedTo(ChronoUnit.SECONDS)}&arriveBy=${arriveBy != null}&numItineraries=4",
+                timeout = 20_000,
+            )
+        )
+        val list = r.optJSONArray("itineraries") ?: return null
+        val all = (0 until list.length()).map { list.getJSONObject(it) }
+        val best = (if (arriveBy != null) all.maxByOrNull { Instant.parse(it.getString("startTime")) } else all.minByOrNull { Instant.parse(it.getString("endTime")) }) ?: return null
+        val start = Instant.parse(best.getString("startTime"))
+        val end = Instant.parse(best.getString("endTime"))
+        val legs = best.getJSONArray("legs")
+        val lines = (0 until legs.length()).map { legs.getJSONObject(it) }.filter { it.optString("mode") != "WALK" }.map { leg ->
+            val kind = when (leg.optString("mode")) {
+                "BUS", "COACH" -> "Bus"
+                "TRAM" -> "Tram"
+                "SUBWAY", "METRO" -> "Metro"
+                "FERRY" -> "Traghetto"
+                "FUNICULAR", "CABLE_CAR", "AERIAL_LIFT" -> "Funivia"
+                else -> "Treno"
+            }
+            listOf(kind, leg.optString("routeShortName").ifBlank { leg.optString("displayName") }).filter { it.isNotBlank() }.joinToString(" ")
+        }
+        if (lines.isEmpty()) return null
+        val seconds = if (arriveBy != null) best.optLong("duration") else end.epochSecond - now.epochSecond
+        return Ride((seconds / 60.0).roundToLong(), start.atZone(zone).toLocalDateTime(), lines.joinToString(" → "))
+    }
+
+    /**
+     * Tempi stimati verso il lavoro e verso il prossimo impegno di oggi che ha un luogo, uno per ogni mezzo scelto.
+     * [from] è il punto di partenza: la posizione precisa se l'utente l'ha concessa, altrimenti quella approssimata.
+     */
     fun load(prefs: Prefs, from: Place, today: List<Event>): List<Travel> {
         val out = mutableListOf<Travel>()
-        val mode = prefs.travelMode
-        val work = prefs.workAddress
-        if (work.isNotBlank()) runCatching {
-            geocode(prefs, work)?.let { route(mode, from, it) }?.let { (min, km) -> out += Travel("Lavoro", min, km) }
-        }
-        val now = LocalDateTime.now()
-        val next = today.firstOrNull { !it.allDay && it.location.isNotBlank() && it.start.isAfter(now) }
-        if (next != null) runCatching {
-            geocode(prefs, next.location, near = from)?.let { route(mode, from, it) }?.let { (min, km) ->
-                // Cinque minuti di margine per parcheggio e imprevisti.
-                out += Travel(next.title, min, km, next.start.minusMinutes(min + 5))
+        val modes = prefs.travelModes
+        val hm = DateTimeFormatter.ofPattern("HH:mm")
+        fun add(label: String, to: Pair<Double, Double>, arriveBy: LocalDateTime?) = modes.forEach { mode ->
+            runCatching {
+                if (mode == "transit") transit(from, to, arriveBy)?.let { ride ->
+                    out += Travel(label, ride.minutes, 0.0, if (arriveBy != null) ride.departure else null, mode, ride.lines + if (arriveBy == null) " · parte alle ${ride.departure.format(hm)}" else "")
+                } else route(mode, from, to)?.let { (min, km) ->
+                    // Cinque minuti di margine per parcheggio e imprevisti.
+                    out += Travel(label, min, km, arriveBy?.minusMinutes(min + 5), mode)
+                }
             }
         }
+        val work = prefs.workAddress
+        if (work.isNotBlank()) (prefs.workPoint ?: runCatching { geocode(prefs, work) }.getOrNull())?.let { add("Lavoro", it, null) }
+        val now = LocalDateTime.now()
+        val next = today.firstOrNull { !it.allDay && it.location.isNotBlank() && it.start.isAfter(now) }
+        if (next != null) runCatching { geocode(prefs, next.location, near = from) }.getOrNull()?.let { add(next.title, it, next.start) }
         return out
     }
 }

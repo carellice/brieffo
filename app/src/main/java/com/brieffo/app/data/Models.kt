@@ -127,7 +127,11 @@ data class WxAlert(val type: String, val level: Int, val until: LocalDateTime?, 
     val color get() = when (level) { 2 -> "gialla"; 3 -> "arancione"; else -> "rossa" }
 }
 
-data class Travel(val label: String, val minutes: Long, val km: Double, val leaveBy: LocalDateTime? = null)
+/** Un tragitto verso [label] con un certo mezzo ([mode], una chiave di TravelRepo.MODES); [detail] sono le linee dei mezzi pubblici. */
+data class Travel(val label: String, val minutes: Long, val km: Double, val leaveBy: LocalDateTime? = null, val mode: String = "car", val detail: String? = null)
+
+/** Indirizzo trovato sulla mappa. */
+data class Address(val label: String, val lat: Double, val lon: Double)
 
 data class Match(
     val home: String,

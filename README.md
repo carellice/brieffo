@@ -44,7 +44,7 @@ Anche i colori seguono l'ora: chiari e caldi al mattino, scuri e profondi la ser
 | **Allerte meteo** | Allerte gialle, arancioni e rosse per la tua regione (solo Italia). |
 | **Pollini** | Graminacee, betulla, ontano, olivo, artemisia e ambrosia, quando presenti. |
 | **Agenda** | Impegni di oggi e domani dai calendari che scegli tu. |
-| **Spostamenti** | Tempo e distanza verso il lavoro e verso il prossimo impegno, con l'ora entro cui partire. |
+| **Spostamenti** | Tempo verso il lavoro e verso il prossimo impegno con i mezzi che scegli (auto, mezzi pubblici, bici, a piedi, anche più d'uno insieme), con l'ora entro cui partire. |
 | **Salute e attività** | Passi con obiettivo, sonno, battito, calorie e distanza da Health Connect. |
 | **Tempo di utilizzo** | Quanto sei stato al telefono oggi e su quali app. |
 | **Notizie** | Titoli e foto dai siti che scegli tu: aggiungi un sito o un feed RSS e Brieffo lo legge. |
@@ -63,6 +63,7 @@ della giornata oppure, se preferisci, lo decidi tu dalle impostazioni.
 - **Indice laterale**: i puntini sul bordo (sinistro o destro, a scelta) mostrano a che punto sei; appoggia il dito e diventano una colonna di icone, tocca o scorri per saltare da una scheda all'altra.
 - **Riepilogo richiudibile**: quello scritto da Gemini si apre e si chiude con un tocco, e può partire già chiuso.
 - **Ordine delle schede**: automatico oppure sistemato a mano, una scheda alla volta.
+- **Indirizzo sulla mappa**: l'indirizzo del lavoro si cerca con i suggerimenti e si conferma su una mappa di OpenStreetMap, gratuita e senza account.
 - **Ricerca della squadra** con campionato, per non confondere due squadre con lo stesso nome.
 - **Notifica giornaliera** con il riepilogo, all'ora che decidi. Nelle impostazioni vedi quali notifiche sono attive, quando arriva la prossima, e puoi mandartene una di prova.
 - **Promemoria della partita**: un tocco sulla prossima gara e ricevi una notifica 30 minuti prima dell'inizio.
@@ -84,7 +85,8 @@ AI Studio. La guida passo passo è nelle impostazioni, alla voce *Riepilogo con 
 
 - **Nessun account e nessun server di Brieffo**: l'app parla direttamente con le fonti dei dati.
 - **Calendario, contatti, salute e tempo di utilizzo restano sul telefono.**
-- **La posizione** viene arrotondata a circa un chilometro e usata per meteo, allerte e percorsi.
+- **La posizione** per meteo e allerte viene arrotondata a circa un chilometro. Per i tempi di spostamento il punto di partenza
+  (preciso solo se lo consenti) e la destinazione vengono inviati ai servizi che calcolano il percorso: OpenStreetMap per auto, bici e piedi, Transitous per i mezzi pubblici.
 - **Sola lettura**: Brieffo non crea né modifica eventi, e non scrive dati di salute.
 - **Con Gemini attivo** i dati delle schede accese (meteo, impegni con luogo, spostamenti, attività,
   app più usate, squadra, titoli delle notizie, mercati, nomi dei compleanni) vengono inviati a Google
@@ -97,6 +99,7 @@ Sono tutti facoltativi: ciò che non consenti resta semplicemente vuoto.
 | Permesso | A cosa serve |
 | --- | --- |
 | Posizione approssimativa | Meteo, allerte e tempi di spostamento |
+| Posizione precisa | Facoltativa, si concede dalle impostazioni: fa partire il calcolo dei tragitti dal punto esatto |
 | Calendario (lettura) | Impegni di oggi e domani |
 | Calendario (modifica) | Solo per chiedere ad Android di scaricare i calendari che accendi |
 | Contatti | Compleanni in arrivo |

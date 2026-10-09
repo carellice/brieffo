@@ -32,7 +32,11 @@ import androidx.compose.material.icons.rounded.NotificationsNone
 import androidx.compose.material.icons.rounded.Place
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material.icons.rounded.Celebration
+import androidx.compose.material.icons.automirrored.rounded.DirectionsBike
+import androidx.compose.material.icons.automirrored.rounded.DirectionsWalk
 import androidx.compose.material.icons.rounded.Commute
+import androidx.compose.material.icons.rounded.DirectionsBus
+import androidx.compose.material.icons.rounded.DirectionsCar
 import androidx.compose.material.icons.rounded.SportsSoccer
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -62,6 +66,7 @@ import com.brieffo.app.data.BriefState
 import com.brieffo.app.data.Match
 import com.brieffo.app.data.Prefs
 import com.brieffo.app.data.Sport
+import com.brieffo.app.data.TravelRepo
 import com.brieffo.app.data.WxAlert
 import com.brieffo.app.data.durationText
 import com.brieffo.app.notify.MatchReminder
@@ -116,20 +121,36 @@ fun TravelCard(s: BriefState, onSetup: () -> Unit) {
             }
             return@BriefCard
         }
-        s.travel.forEachIndexed { i, t ->
+        // Una destinazione alla volta, con sotto una riga per ogni mezzo scelto.
+        s.travel.groupBy { it.label }.entries.forEachIndexed { i, (label, rides) ->
             if (i > 0) HorizontalDivider(Modifier.padding(vertical = 12.dp), color = p.text.copy(alpha = 0.08f))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(t.label, fontSize = 15.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(
-                        String.format(Locale.ITALY, "%.1f km", t.km) + (t.leaveBy?.let { " · parti entro le ${it.format(hm)}" } ?: ""),
-                        fontSize = 12.sp, color = if (t.leaveBy != null) p.accent else p.sub,
+            Text(label, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            rides.forEach { t ->
+                Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        when (t.mode) {
+                            "transit" -> Icons.Rounded.DirectionsBus
+                            "bike" -> Icons.AutoMirrored.Rounded.DirectionsBike
+                            "foot" -> Icons.AutoMirrored.Rounded.DirectionsWalk
+                            else -> Icons.Rounded.DirectionsCar
+                        },
+                        null, Modifier.size(22.dp), tint = p.accent,
                     )
+                    Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                        Text(TravelRepo.MODES[t.mode] ?: t.mode, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                        Text(
+                            listOfNotNull(
+                                t.detail ?: String.format(Locale.ITALY, "%.1f km", t.km),
+                                t.leaveBy?.let { "parti entro le ${it.format(hm)}" },
+                            ).joinToString(" · "),
+                            fontSize = 12.sp, lineHeight = 16.sp, color = if (t.leaveBy != null) p.accent else p.sub,
+                        )
+                    }
+                    Text(durationText(t.minutes), fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
                 }
-                Text(durationText(t.minutes), fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
             }
         }
-        Text("Stima senza traffico in tempo reale", fontSize = 11.sp, color = p.sub.copy(alpha = 0.8f), modifier = Modifier.padding(top = 12.dp))
+        Text("Auto, bici e piedi: stima senza traffico. Mezzi pubblici: orari ufficiali, con l'attesa alla fermata.", fontSize = 11.sp, color = p.sub.copy(alpha = 0.8f), modifier = Modifier.padding(top = 12.dp))
     }
 }
 

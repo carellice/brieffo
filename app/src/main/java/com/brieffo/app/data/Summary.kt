@@ -65,7 +65,7 @@ object Summary {
         }
 
         s.travel.firstOrNull { it.leaveBy != null }?.let { t ->
-            if (t.leaveBy!!.isAfter(s.now)) parts += "Per «${t.label}» parti entro le ${t.leaveBy.format(hm)}."
+            if (t.leaveBy!!.isAfter(s.now)) parts += "Per «${t.label}» parti entro le ${t.leaveBy.format(hm)} (${TravelRepo.MODES[t.mode]?.lowercase() ?: t.mode})."
         }
 
         if (health != null) {
@@ -121,7 +121,7 @@ object Summary {
                 appendLine("Impegni di domani: " + events(s.tomorrow))
             }
             if (s.shows(CardKeys.TRAVEL)) s.travel.forEach {
-                appendLine("Spostamento verso ${it.label}: ${it.minutes} min" + (it.leaveBy?.let { l -> ", partire entro ${l.format(hm)}" } ?: ""))
+                appendLine("Spostamento verso ${it.label} (${TravelRepo.MODES[it.mode]?.lowercase() ?: it.mode}): ${it.minutes} min" + (it.detail?.let { d -> ", $d" } ?: "") + (it.leaveBy?.let { l -> ", partire entro ${l.format(hm)}" } ?: ""))
             }
             if (s.shows(CardKeys.HEALTH)) {
                 health?.steps?.let { appendLine("Passi: $it su obiettivo ${s.stepGoal}") }

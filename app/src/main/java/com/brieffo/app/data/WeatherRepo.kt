@@ -20,12 +20,12 @@ import java.time.LocalDateTime
 import java.util.Locale
 import kotlin.coroutines.resume
 
-fun httpGet(url: String, headers: Map<String, String> = emptyMap()): String {
+fun httpGet(url: String, headers: Map<String, String> = emptyMap(), timeout: Int = 10_000): String {
     val c = URL(url).openConnection() as HttpURLConnection
     try {
         c.connectTimeout = 10_000
-        c.readTimeout = 10_000
-        c.setRequestProperty("User-Agent", "Brieffo/1.0 (Android; personal app)")
+        c.readTimeout = timeout
+        c.setRequestProperty("User-Agent", "Brieffo/1.0 (Android; github.com/carellice/brieffo)")
         headers.forEach { (k, v) -> c.setRequestProperty(k, v) }
         if (c.responseCode !in 200..299) error("HTTP ${c.responseCode} per $url")
         return c.inputStream.bufferedReader().use { it.readText() }
@@ -66,6 +66,14 @@ object WeatherRepo {
         }
     }
 
+    /**
+     * Punto di partenza per i tempi di spostamento: dove si trova il telefono adesso, senza arrotondare.
+     * Con la posizione precisa concessa è il punto esatto; altrimenti quello approssimato che dà Android,
+     * e in mancanza anche di quello la città del meteo.
+     */
+    suspend fun travelOrigin(ctx: Context, prefs: Prefs): Place? =
+        deviceLocation(ctx, maxAge = 10 * 60_000L)?.let { Place(it.latitude, it.longitude, "Posizione attuale") } ?: resolvePlace(ctx, prefs)
+
     private fun geocode(city: String): Place? {
         val q = URLEncoder.encode(city, "UTF-8")
         val r = JSONObject(httpGet("https://geocoding-api.open-meteo.com/v1/search?name=$q&count=1&language=it"))
@@ -74,12 +82,12 @@ object WeatherRepo {
     }
 
     @SuppressLint("MissingPermission")
-    private suspend fun deviceLocation(ctx: Context): Location? {
+    private suspend fun deviceLocation(ctx: Context, maxAge: Long = 6 * 3600_000L): Location? {
         if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) return null
         val lm = ctx.getSystemService(LocationManager::class.java) ?: return null
         val providers = runCatching { lm.getProviders(true) }.getOrDefault(emptyList())
         val last = providers.mapNotNull { runCatching { lm.getLastKnownLocation(it) }.getOrNull() }.maxByOrNull { it.time }
-        if (last != null && System.currentTimeMillis() - last.time < 6 * 3600_000L) return last
+        if (last != null && System.currentTimeMillis() - last.time < maxAge) return last
         if (Build.VERSION.SDK_INT >= 30) {
             // Si provano tutti i provider attivi: su alcuni telefoni quello di rete risponde subito con null.
             for (provider in listOf(LocationManager.FUSED_PROVIDER, LocationManager.NETWORK_PROVIDER, LocationManager.GPS_PROVIDER).filter { it in providers }) {

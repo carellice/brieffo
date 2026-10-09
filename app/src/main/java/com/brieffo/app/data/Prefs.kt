@@ -182,7 +182,17 @@ class Prefs(ctx: Context) {
         get() = sp.getString("workAddress", "") ?: ""
         set(v) = sp.edit { putString("workAddress", v.trim()) }
 
-    /** "car", "bike" oppure "foot". */
+    /** Coordinate dell'indirizzo del lavoro, se è stato scelto sulla mappa; altrimenti lo si cerca dal testo. */
+    var workPoint: Pair<Double, Double>?
+        get() = (sp.getString("workPoint", "") ?: "").split(',').mapNotNull { it.toDoubleOrNull() }.takeIf { it.size == 2 }?.let { it[0] to it[1] }
+        set(v) = sp.edit { putString("workPoint", v?.let { "${it.first},${it.second}" } ?: "") }
+
+    /** Mezzi con cui calcolare i tragitti (chiavi di TravelRepo.MODES), anche più d'uno. */
+    var travelModes: List<String>
+        get() = (sp.getString("travelModes", null) ?: travelMode).split(',').filter { it in TravelRepo.MODES }.ifEmpty { listOf("car") }
+        set(v) = sp.edit { putString("travelModes", v.joinToString(",")) }
+
+    /** Il mezzo unico delle versioni precedenti: resta solo per chi aggiorna. */
     var travelMode: String
         get() = sp.getString("travelMode", "car") ?: "car"
         set(v) = sp.edit { putString("travelMode", v) }
@@ -230,7 +240,7 @@ class Prefs(ctx: Context) {
 
     private companion object {
         const val BACKUP_APP = "brieffo"
-        val BACKUP_STRINGS = setOf("name", "city", "geminiKey", "feeds", "themeMode", "team", "teamRef", "workAddress", "travelMode", "cardOrder", "speechVoice", "speechEngine", "localVoice", "aiSpeed")
+        val BACKUP_STRINGS = setOf("name", "city", "geminiKey", "feeds", "themeMode", "team", "teamRef", "workAddress", "workPoint", "travelModes", "travelMode", "cardOrder", "speechVoice", "speechEngine", "localVoice", "aiSpeed")
         val BACKUP_INTS = setOf("stepGoal", "notifyHour", "notifyMinute", "accent", "speechSpeed")
         val BACKUP_BOOLEANS = setOf("notifyEnabled", "summaryCollapsed", "railRight", "weatherAnimated")
         val BACKUP_SETS = setOf("hidden")

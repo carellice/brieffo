@@ -117,7 +117,7 @@ class BriefViewModel(app: Application) : AndroidViewModel(app) {
                     }
                 }
                 launch(Dispatchers.IO) {
-                    val t = if (on(CardKeys.TRAVEL)) runCatching { place.await()?.let { TravelRepo.load(prefs, it, events.await().first) } }.getOrNull() else null
+                    val t = if (on(CardKeys.TRAVEL)) runCatching { WeatherRepo.travelOrigin(app, prefs)?.let { TravelRepo.load(prefs, it, events.await().first) } }.getOrNull() else null
                     _state.update { it.copy(travel = t ?: emptyList()) }
                 }
                 if (on(CardKeys.HEALTH)) launch(Dispatchers.IO) {
