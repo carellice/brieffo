@@ -25,6 +25,7 @@ import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.Celebration
 import androidx.compose.material.icons.rounded.Commute
 import androidx.compose.material.icons.rounded.Newspaper
+import androidx.compose.material.icons.rounded.NightsStay
 import androidx.compose.material.icons.rounded.Place
 import androidx.compose.material.icons.rounded.QueryStats
 import androidx.compose.material.icons.rounded.SelfImprovement
@@ -78,6 +79,7 @@ fun sectionIcon(key: String): ImageVector = when (key) {
     CardKeys.MARKETS -> Icons.Rounded.QueryStats
     CardKeys.OCCASIONS -> Icons.Rounded.Celebration
     CardKeys.EXTRAS -> Icons.Rounded.TipsAndUpdates
+    CardKeys.TOMORROW -> Icons.Rounded.NightsStay
     else -> Icons.Rounded.AutoAwesome
 }
 

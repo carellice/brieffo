@@ -52,6 +52,7 @@ Anche i colori seguono l'ora: chiari e caldi al mattino, scuri e profondi la ser
 | **Mercati** | Bitcoin, Ethereum e cambi dell'euro. |
 | **Ricorrenze** | Santi del giorno, compleanni dei contatti, prossima festività. |
 | **In breve** | Fase lunare, batteria, prossima sveglia e un "accadde oggi". |
+| **Domani** | Solo la sera: che tempo farà, il primo impegno, quando uscire e la sveglia consigliata. |
 
 Ogni scheda si può nascondere. Quelle spente non scaricano dati. L'ordine segue il momento
 della giornata oppure, se preferisci, lo decidi tu dalle impostazioni.
@@ -66,11 +67,14 @@ della giornata oppure, se preferisci, lo decidi tu dalle impostazioni.
 - **Indirizzo sulla mappa**: l'indirizzo del lavoro si cerca con i suggerimenti e si conferma su una mappa di OpenStreetMap, gratuita e senza account.
 - **Ricerca della squadra** con campionato, per non confondere due squadre con lo stesso nome.
 - **Notifica giornaliera** con il riepilogo, all'ora che decidi. Nelle impostazioni vedi quali notifiche sono attive, quando arriva la prossima, e puoi mandartene una di prova.
+- **Partita in diretta**: dal fischio d'inizio il punteggio viene ricontrollato ogni paio di minuti, con un avviso a ogni gol e a fine partita.
+- **Ora di partire**: un avviso dieci minuti prima dell'ora entro cui uscire per un impegno che ha un luogo.
+- **Più destinazioni**: oltre al lavoro puoi salvare casa, palestra e altre; il brief mostra i tempi verso tutte, tranne quella in cui ti trovi.
 - **Promemoria della partita**: un tocco sulla prossima gara e ricevi una notifica 30 minuti prima dell'inizio.
 - **Riepilogo da ascoltare**: un tocco su *Ascolta* e te lo legge una voce che gira tutta sul telefono, gratuita e senza limiti (si scarica una volta, circa 64 MB). In alternativa una voce di Gemini o quella di Android; velocità e voce a scelta.
 - **Aggiornamento misurato**: il brief si ricarica da solo ogni quattro ore; quando vuoi dati freschi, trascina verso il basso.
-- **Widget per la Home**: prossima partita, meteo, agenda e riepilogo, da aggiungere dalle impostazioni o dal menu dei widget di Android.
-- **Backup della configurazione**: esporta tutto in un file e importalo sul telefono nuovo.
+- **Widget per la Home**: la mia giornata (meteo, impegno e partita insieme), prossima partita, meteo, agenda e riepilogo, da aggiungere dalle impostazioni o dal menu dei widget di Android.
+- **Backup della configurazione**: esporta tutto in un file e importalo sul telefono nuovo, oppure scegli una cartella e il backup si aggiorna da solo.
 - **Meteo animato**: il sole gira e manda riflessi, pioggia e neve cadono sulla scheda, i temporali lampeggiano. Si può spegnere dalle impostazioni.
 - **Icone disegnate su misura** per il meteo e la fase lunare.
 
@@ -103,7 +107,7 @@ Sono tutti facoltativi: ciò che non consenti resta semplicemente vuoto.
 | Calendario (lettura) | Impegni di oggi e domani |
 | Calendario (modifica) | Solo per chiedere ad Android di scaricare i calendari che accendi |
 | Contatti | Compleanni in arrivo |
-| Notifiche | Brief giornaliero e promemoria della partita |
+| Notifiche | Brief giornaliero, promemoria e diretta della partita, avviso di partenza |
 | Installazione di app | Solo per installare gli aggiornamenti di Brieffo scaricati da GitHub |
 | Sveglie e avvio al riavvio | Far arrivare le notifiche all'ora esatta, anche dopo aver riacceso il telefono |
 | Health Connect | Passi, sonno, battito, calorie, distanza |

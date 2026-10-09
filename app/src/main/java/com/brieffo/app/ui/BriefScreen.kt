@@ -123,16 +123,18 @@ fun BriefScreen(s: BriefState, actions: BriefActions, scroll: ScrollState = reme
                 CardKeys.MARKETS to { MarketsCard(s.markets) },
                 CardKeys.OCCASIONS to { OccasionsCard(s, actions.grantContacts) },
                 CardKeys.EXTRAS to { ExtrasCard(s.onThisDay, s.moon, s.battery, s.nextAlarm) },
+                CardKeys.TOMORROW to { TomorrowCard(s) },
             )
             // Senza un ordine scelto a mano si segue il momento della giornata: al mattino si guarda avanti, la sera si tira il bilancio.
             val order = if (s.cardOrder.isNotEmpty()) CardKeys.ordered(s.cardOrder) else with(CardKeys) {
                 when (s.daypart) {
                     Daypart.MORNING -> listOf(WEATHER, TRAVEL, AGENDA, HEALTH, NEWS, SPORT, OCCASIONS, MARKETS, EXTRAS, USAGE)
                     Daypart.MIDDAY -> listOf(AGENDA, TRAVEL, WEATHER, HEALTH, NEWS, SPORT, MARKETS, USAGE, OCCASIONS, EXTRAS)
-                    Daypart.EVENING, Daypart.NIGHT -> listOf(HEALTH, USAGE, AGENDA, WEATHER, SPORT, NEWS, MARKETS, OCCASIONS, EXTRAS)
+                    Daypart.EVENING, Daypart.NIGHT -> listOf(TOMORROW, HEALTH, USAGE, AGENDA, WEATHER, SPORT, NEWS, MARKETS, OCCASIONS, EXTRAS)
                 }
             }
-            val keys = listOf(SUMMARY_SECTION) + order.filter { s.shows(it) }
+            val evening = s.daypart == Daypart.EVENING || s.daypart == Daypart.NIGHT
+            val keys = listOf(SUMMARY_SECTION) + order.filter { s.shows(it) && (it != CardKeys.TOMORROW || evening) }
             SideEffect { if (shown != keys) shown = keys }
             keys.forEachIndexed { i, key ->
                 Box(Modifier.onGloballyPositioned { c -> bounds[key] = c.positionInParent().y.toInt() to c.size.height }) {

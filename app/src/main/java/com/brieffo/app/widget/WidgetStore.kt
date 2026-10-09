@@ -8,6 +8,7 @@ import coil.ImageLoader
 import coil.request.ImageRequest
 import com.brieffo.app.data.BriefState
 import com.brieffo.app.data.CardKeys
+import com.brieffo.app.data.Sport
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -52,18 +53,7 @@ object WidgetStore {
             o.put("weather", JSONObject().put("place", w.place).put("temp", Math.round(w.temp)).put("code", w.code).put("isDay", w.isDay)
                 .put("min", w.today?.tMin?.let { Math.round(it) }).put("max", w.today?.tMax?.let { Math.round(it) }).put("rain", w.today?.rainProb))
         }
-        val sport = s.sport.takeIf { s.shows(CardKeys.SPORT) }
-        o.put("team", sport?.team ?: "")
-        val m = sport?.live ?: sport?.next
-        var homeLogo = ""
-        var awayLogo = ""
-        if (m != null) {
-            homeLogo = m.homeLogo ?: ""
-            awayLogo = m.awayLogo ?: ""
-            o.put("match", JSONObject().put("home", m.home).put("away", m.away).put("date", m.date?.let(::millis)).put("league", m.league)
-                .put("live", m.live).put("homeScore", m.homeScore).put("awayScore", m.awayScore).put("venue", m.venue))
-        }
-        o.put("homeLogo", homeLogo).put("awayLogo", awayLogo)
+        val (homeLogo, awayLogo) = putSport(o, s.sport.takeIf { s.shows(CardKeys.SPORT) })
         o.put("agendaGranted", s.calendarGranted && s.shows(CardKeys.AGENDA))
         val now = LocalDateTime.now()
         o.put("events", JSONArray((s.today.filter { it.allDay || it.end.isAfter(now) } + s.tomorrow).take(8).map {
@@ -71,8 +61,37 @@ object WidgetStore {
         }))
         sp.edit { putString("data", o.toString()) }
 
+        saveLogos(ctx, old, homeLogo, awayLogo)
+        Widgets.redraw(ctx)
+    }
+
+    /** Scrive in [o] squadra e partita da mostrare (quella in corso, altrimenti la prossima); restituisce gli indirizzi dei due stemmi. */
+    private fun putSport(o: JSONObject, sport: Sport?): Pair<String, String> {
+        o.put("team", sport?.team ?: "")
+        o.remove("match")
+        val m = sport?.live ?: sport?.next
+        if (m != null) {
+            o.put("match", JSONObject().put("home", m.home).put("away", m.away).put("date", m.date?.let(::millis)).put("league", m.league)
+                .put("live", m.live).put("homeScore", m.homeScore).put("awayScore", m.awayScore).put("venue", m.venue))
+        }
+        val logos = (m?.homeLogo ?: "") to (m?.awayLogo ?: "")
+        o.put("homeLogo", logos.first).put("awayLogo", logos.second)
+        return logos
+    }
+
+    private suspend fun saveLogos(ctx: Context, old: JSONObject, homeLogo: String, awayLogo: String) {
         if (homeLogo != old.optString("homeLogo") || !logo(ctx, true).exists()) saveLogo(ctx, homeLogo, logo(ctx, true))
         if (awayLogo != old.optString("awayLogo") || !logo(ctx, false).exists()) saveLogo(ctx, awayLogo, logo(ctx, false))
+    }
+
+    /** Aggiorna nei widget solo la partita, lasciando il resto com'è: serve durante la diretta. */
+    suspend fun updateSport(ctx: Context, sport: Sport) {
+        val sp = prefs(ctx)
+        val o = runCatching { JSONObject(sp.getString("data", null) ?: return) }.getOrNull() ?: return
+        val old = JSONObject(o.toString())
+        val (homeLogo, awayLogo) = putSport(o, sport)
+        sp.edit { putString("data", o.toString()) }
+        saveLogos(ctx, old, homeLogo, awayLogo)
         Widgets.redraw(ctx)
     }
 

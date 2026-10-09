@@ -101,6 +101,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import coil.compose.AsyncImage
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.brieffo.app.data.AutoBackup
 import com.brieffo.app.data.CalendarInfo
 import com.brieffo.app.data.CalendarRepo
 import com.brieffo.app.data.CardKeys
@@ -115,8 +116,10 @@ import com.brieffo.app.data.TeamRef
 import com.brieffo.app.data.Updater
 import com.brieffo.app.notify.Alarms
 import com.brieffo.app.notify.BriefWorker
+import com.brieffo.app.notify.LeaveReminder
 import com.brieffo.app.notify.MatchReminder
 import com.brieffo.app.widget.AgendaWidgetReceiver
+import com.brieffo.app.widget.DayWidgetReceiver
 import com.brieffo.app.widget.MatchWidgetReceiver
 import com.brieffo.app.widget.SummaryWidgetReceiver
 import com.brieffo.app.widget.WeatherWidgetReceiver
@@ -345,8 +348,7 @@ fun SettingsScreen(
     var feeds by remember { mutableStateOf(prefs.feeds) }
     var team by remember { mutableStateOf(prefs.team) }
     var teamRef by remember { mutableStateOf(prefs.teamRef) }
-    var work by remember { mutableStateOf(prefs.workAddress) }
-    var workPoint by remember { mutableStateOf(prefs.workPoint?.let { "${it.first},${it.second}" } ?: "") }
+    var places by remember { mutableStateOf(prefs.places) }
     var modes by remember { mutableStateOf(prefs.travelModes) }
     var notify by remember { mutableStateOf(prefs.notifyEnabled) }
     var speechSpeed by remember { mutableIntStateOf(prefs.speechSpeed) }
@@ -362,6 +364,8 @@ fun SettingsScreen(
     val time = rememberTimePickerState(prefs.notifyHour, prefs.notifyMinute, is24Hour = true)
     var key by remember { mutableStateOf(prefs.geminiKey) }
     var collapsed by remember { mutableStateOf(prefs.summaryCollapsed) }
+    var leaveAlerts by remember { mutableStateOf(prefs.leaveAlerts) }
+    var liveAlerts by remember { mutableStateOf(prefs.liveAlerts) }
     var aiSpeed by remember { mutableStateOf(prefs.aiSpeed) }
     var railRight by remember { mutableStateOf(prefs.railRight) }
     var weatherAnimated by remember { mutableStateOf(prefs.weatherAnimated) }
@@ -401,14 +405,15 @@ fun SettingsScreen(
         prefs.feeds = feeds
         prefs.team = team
         prefs.teamRef = teamRef
-        prefs.workAddress = work
-        prefs.workPoint = workPoint.split(',').mapNotNull { it.toDoubleOrNull() }.takeIf { it.size == 2 }?.let { it[0] to it[1] }
+        prefs.places = places
         prefs.travelModes = modes
         prefs.notifyEnabled = notify
         prefs.notifyHour = time.hour
         prefs.notifyMinute = time.minute
         prefs.geminiKey = key
         prefs.summaryCollapsed = collapsed
+        prefs.leaveAlerts = leaveAlerts
+        prefs.liveAlerts = liveAlerts
         prefs.aiSpeed = aiSpeed
         prefs.railRight = railRight
         prefs.weatherAnimated = weatherAnimated
@@ -437,14 +442,15 @@ fun SettingsScreen(
                 feeds = prefs.feeds
                 team = prefs.team
                 teamRef = prefs.teamRef
-                work = prefs.workAddress
-                workPoint = prefs.workPoint?.let { "${it.first},${it.second}" } ?: ""
+                places = prefs.places
                 modes = prefs.travelModes
                 notify = prefs.notifyEnabled
                 time.hour = prefs.notifyHour
                 time.minute = prefs.notifyMinute
                 key = prefs.geminiKey
                 collapsed = prefs.summaryCollapsed
+                leaveAlerts = prefs.leaveAlerts
+                liveAlerts = prefs.liveAlerts
                 aiSpeed = prefs.aiSpeed
                 railRight = prefs.railRight
                 weatherAnimated = prefs.weatherAnimated
@@ -459,11 +465,27 @@ fun SettingsScreen(
         }
     }
 
+    var backupCheck by remember { mutableIntStateOf(0) }
+    val backupFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) {
+            AutoBackup.choose(context, uri)
+            save()
+            pageScope.launch {
+                val ok = withContext(Dispatchers.IO) { AutoBackup.write(context, force = true) }
+                if (!ok) backupMessage = "Non riesco a scrivere in quella cartella: scegline un'altra."
+                backupCheck++
+            }
+        }
+    }
+
     // Niente pulsante Salva: le modifiche si scrivono quando si lascia la pagina, poi il brief si ricarica.
     val latestSave by rememberUpdatedState(save)
     DisposableEffect(Unit) {
         onDispose {
             latestSave()
+            // Le impostazioni appena salvate finiscono anche nel backup automatico, se è attivo.
+            val app = context.applicationContext
+            Thread { AutoBackup.write(app) }.start()
             onSaved()
         }
     }
@@ -667,8 +689,8 @@ fun SettingsScreen(
             TeamPicker(team, teamRef) { t, r -> team = t; teamRef = r }
         }
 
-        if (CardKeys.TRAVEL !in hidden) SettingsSection("Spostamenti", Icons.Rounded.Commute, work.ifBlank { "Indirizzo non impostato" }, "Spostamenti" in openSections, { openSections = if ("Spostamenti" in openSections) openSections - "Spostamenti" else openSections + "Spostamenti" }) {
-            TravelSetup(work, workPoint, modes, "Via, numero e città. Lascia vuoto se non ti serve", { address, point -> work = address; workPoint = point }) { modes = it }
+        if (CardKeys.TRAVEL !in hidden) SettingsSection("Spostamenti", Icons.Rounded.Commute, places.filter { it.address.isNotBlank() }.joinToString(", ") { it.name.ifBlank { "Destinazione" } }.ifBlank { "Nessuna destinazione" }, "Spostamenti" in openSections, { openSections = if ("Spostamenti" in openSections) openSections - "Spostamenti" else openSections + "Spostamenti" }) {
+            TravelSetup(places, modes, "Via, numero e città. Lascia vuoto se non ti serve", { places = it }) { modes = it }
         }
 
         SettingsSection("Lettura ad alta voce", Icons.Rounded.RecordVoiceOver, when (speechEngine) { "local" -> "Voce locale"; "gemini" -> "Voce di Gemini"; else -> "Voce del telefono" } + " · %.1f×".format(speechSpeed / 100f), "Lettura ad alta voce" in openSections, { openSections = if ("Lettura ad alta voce" in openSections) openSections - "Lettura ad alta voce" else openSections + "Lettura ad alta voce" }) {
@@ -750,7 +772,7 @@ fun SettingsScreen(
         SettingsSection("Notifiche", Icons.Rounded.NotificationsActive, if (notify) "Brief ogni giorno alle %02d:%02d".format(time.hour, time.minute) else "Brief giornaliero spento", "Notifiche" in openSections, { openSections = if ("Notifiche" in openSections) openSections - "Notifiche" else openSections + "Notifiche" }) {
             val whenFormat = remember { DateTimeFormatter.ofPattern("EEEE d MMMM 'alle' HH:mm", Locale.ITALIAN) }
             val allowed = remember(notifyCheck) { NotificationManagerCompat.from(context).areNotificationsEnabled() }
-            Note("Brieffo manda solo queste due notifiche, più quella di prova qui sotto.")
+            Note("Brieffo manda solo queste notifiche, più quella di prova in fondo.")
             if (!allowed) {
                 Spacer(Modifier.height(8.dp))
                 Text("Le notifiche di Brieffo sono bloccate da Android: finché restano così non arriva nulla.", fontSize = 14.sp, lineHeight = 19.sp, color = Color(0xFFE5484D))
@@ -798,6 +820,14 @@ fun SettingsScreen(
                 Spacer(Modifier.height(4.dp))
                 Note("Nessuno in attesa. Si accende dal brief, con \"Avvisami ${MatchReminder.MINUTES_BEFORE} minuti prima\" sotto la prossima partita.")
             }
+            Spacer(Modifier.height(14.dp))
+
+            Text("Partita in diretta", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = p.sub)
+            ToggleRow("Segui la partita", liveAlerts, detail = "Avviso all'inizio, a ogni gol e alla fine; il widget si aggiorna ogni paio di minuti") { liveAlerts = it }
+            Spacer(Modifier.height(14.dp))
+
+            Text("Ora di partire", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = p.sub)
+            ToggleRow("Avvisami quando è ora di uscire", leaveAlerts, detail = "${LeaveReminder.LEAD_MINUTES} minuti prima dell'ora di partenza per un impegno in agenda che ha un luogo") { leaveAlerts = it }
             Spacer(Modifier.height(12.dp))
 
             OutlinedButton(
@@ -814,10 +844,11 @@ fun SettingsScreen(
             }
         }
 
-        SettingsSection("Widget", Icons.Rounded.Widgets, "Partita, meteo, agenda e riepilogo sulla Home", "Widget" in openSections, { openSections = if ("Widget" in openSections) openSections - "Widget" else openSections + "Widget" }) {
+        SettingsSection("Widget", Icons.Rounded.Widgets, "Giornata, partita, meteo, agenda e riepilogo sulla Home", "Widget" in openSections, { openSections = if ("Widget" in openSections) openSections - "Widget" else openSections + "Widget" }) {
             val manager = remember { AppWidgetManager.getInstance(context) }
             val canPin = remember { manager.isRequestPinAppWidgetSupported }
             listOf(
+                Triple("La mia giornata", "Meteo, prossimo impegno e partita in un solo riquadro", DayWidgetReceiver::class.java),
                 Triple("Prossima partita", "La prossima gara della tua squadra, o il punteggio di quella in corso", MatchWidgetReceiver::class.java),
                 Triple("Meteo", "Il tempo di adesso con minima, massima e pioggia", WeatherWidgetReceiver::class.java),
                 Triple("Agenda", "I prossimi impegni di oggi e di domani", AgendaWidgetReceiver::class.java),
@@ -854,6 +885,25 @@ fun SettingsScreen(
             backupMessage?.let {
                 Spacer(Modifier.height(8.dp))
                 Note(it)
+            }
+            Spacer(Modifier.height(14.dp))
+            Text("Backup automatico", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = p.sub)
+            val folder = remember(backupCheck) { AutoBackup.folderName(context) }
+            if (folder == null) {
+                Note("Scegli una cartella (anche di Google Drive o di un altro servizio che compare tra i file del telefono): il backup si riscrive lì da solo ogni volta che cambi le impostazioni.")
+                OutlinedButton(onClick = { backupFolder.launch(null) }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                    Text("Scegli la cartella", color = p.accent)
+                }
+            } else {
+                val last = remember(backupCheck) { prefs.backupAt.takeIf { it > 0 }?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDateTime() } }
+                Note(
+                    "Attivo nella cartella «$folder», file brieffo-backup.json." +
+                        (last?.let { " Ultimo backup: ${it.format(DateTimeFormatter.ofPattern("d MMMM 'alle' HH:mm", Locale.ITALIAN))}." } ?: " Il primo backup parte uscendo dalle impostazioni.")
+                )
+                Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedButton(onClick = { backupFolder.launch(null) }, modifier = Modifier.weight(1f)) { Text("Cambia cartella", color = p.accent) }
+                    OutlinedButton(onClick = { AutoBackup.disable(context); backupCheck++ }, modifier = Modifier.weight(1f)) { Text("Disattiva", color = p.accent) }
+                }
             }
         }
 

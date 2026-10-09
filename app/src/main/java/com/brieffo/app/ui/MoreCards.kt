@@ -29,6 +29,7 @@ import androidx.compose.material.icons.rounded.Church
 import androidx.compose.material.icons.rounded.Event
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.NotificationsNone
+import androidx.compose.material.icons.rounded.NightsStay
 import androidx.compose.material.icons.rounded.Place
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material.icons.rounded.Celebration
@@ -63,6 +64,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.brieffo.app.data.BriefState
+import com.brieffo.app.data.CardKeys
+import com.brieffo.app.data.wxText
 import com.brieffo.app.data.Match
 import com.brieffo.app.data.Prefs
 import com.brieffo.app.data.Sport
@@ -114,9 +117,9 @@ fun TravelCard(s: BriefState, onSetup: () -> Unit) {
     val p = LocalPalette.current
     BriefCard(title = "Spostamenti", icon = Icons.Rounded.Commute) {
         if (s.travel.isEmpty()) {
-            if (s.travelConfigured) Hint("Non riesco a calcolare il percorso: controlla l'indirizzo nelle impostazioni e che la posizione sia attiva.")
+            if (s.travelConfigured) Hint("Nessun tragitto da mostrare: sei già a destinazione, oppure non riesco a calcolare il percorso (controlla l'indirizzo nelle impostazioni e che la posizione sia attiva).")
             else {
-                Hint("Aggiungi l'indirizzo del lavoro nelle impostazioni per vedere quanto ci metti. Per gli impegni in agenda con un luogo il tempo si calcola da solo.")
+                Hint("Aggiungi il lavoro o un'altra destinazione nelle impostazioni per vedere quanto ci metti. Per gli impegni in agenda con un luogo il tempo si calcola da solo.")
                 ActionButton("Imposta", onSetup)
             }
             return@BriefCard
@@ -409,6 +412,50 @@ private fun OccasionRow(icon: ImageVector, title: String, detail: String) {
         Column(Modifier.padding(start = 12.dp)) {
             Text(title, fontSize = 15.sp, fontWeight = FontWeight.Medium)
             Text(detail, fontSize = 12.sp, color = LocalPalette.current.sub)
+        }
+    }
+}
+
+/**
+ * Sguardo a domani, per il brief della sera: che tempo farà, il primo impegno, quando uscire
+ * e a che ora conviene puntare la sveglia.
+ */
+@Composable
+fun TomorrowCard(s: BriefState) {
+    val p = LocalPalette.current
+    BriefCard(title = "Domani", icon = Icons.Rounded.NightsStay, trailing = if (s.calendarGranted) "${s.tomorrow.size} ${if (s.tomorrow.size == 1) "impegno" else "impegni"}" else null) {
+        s.weather?.tomorrow?.takeIf { s.shows(CardKeys.WEATHER) }?.let { d ->
+            Row(Modifier.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(36.dp), contentAlignment = Alignment.Center) { WeatherIcon(d.code, size = 32.dp) }
+                Column(Modifier.padding(start = 12.dp)) {
+                    Text(wxText(d.code).replaceFirstChar { it.uppercase() }, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                    Text("Tra ${Math.round(d.tMin)}° e ${Math.round(d.tMax)}°" + if (d.rainProb > 0) " · pioggia ${d.rainProb}%" else "", fontSize = 12.sp, color = p.sub)
+                }
+            }
+        }
+        val first = s.tomorrow.firstOrNull { !it.allDay }
+        if (s.calendarGranted && s.shows(CardKeys.AGENDA)) {
+            if (first != null) OccasionRow(Icons.Rounded.Event, first.title, "Primo impegno alle ${first.start.format(hm)}" + if (first.location.isNotBlank()) " · ${first.location}" else "")
+            else OccasionRow(Icons.Rounded.Event, if (s.tomorrow.isEmpty()) "Agenda libera" else s.tomorrow.first().title, if (s.tomorrow.isEmpty()) "Nessun impegno in programma" else "Tutto il giorno")
+        }
+        val ride = s.tomorrowTravel.firstOrNull { it.leaveBy != null }
+        if (ride != null) OccasionRow(
+            Icons.Rounded.Commute, "Esci entro le ${ride.leaveBy!!.format(hm)}",
+            "${TravelRepo.MODES[ride.mode] ?: ride.mode} · ${durationText(ride.minutes)}" + (ride.detail?.let { " · $it" } ?: ""),
+        )
+        // Un'ora per prepararsi prima di uscire; senza un tragitto, mezz'ora di margine sull'impegno.
+        val wake = (ride?.leaveBy ?: first?.start?.minusMinutes(30))?.minusMinutes(60)
+        val alarm = s.nextAlarm?.takeIf { it.toLocalDate() <= s.now.toLocalDate().plusDays(1) }
+        when {
+            wake != null -> OccasionRow(
+                Icons.Rounded.Alarm, "Sveglia consigliata alle ${wake.format(hm)}",
+                when {
+                    alarm == null -> "Non ne hai una impostata per domani"
+                    alarm.isAfter(wake.plusMinutes(10)) -> "La tua suona alle ${alarm.format(hm)}: è più tardi"
+                    else -> "La tua suona alle ${alarm.format(hm)}"
+                },
+            )
+            alarm != null -> OccasionRow(Icons.Rounded.Alarm, "Sveglia alle ${alarm.format(hm)}", "Nessun impegno con orario: puoi prendertela comoda")
         }
     }
 }

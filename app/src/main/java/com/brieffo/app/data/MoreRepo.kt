@@ -142,6 +142,26 @@ object TravelRepo {
         return (route.getDouble("duration") / 60).roundToLong() to route.getDouble("distance") / 1000
     }
 
+    /** Distanza in linea d'aria tra due punti, in metri. */
+    private fun meters(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+        val dLat = Math.toRadians(lat2 - lat1)
+        val dLon = Math.toRadians(lon2 - lon1)
+        val h = Math.sin(dLat / 2).let { it * it } + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) * Math.sin(dLon / 2).let { it * it }
+        return 6_371_000 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h))
+    }
+
+    /** I tragitti verso un singolo impegno, con ogni mezzo scelto: servono al promemoria di partenza e allo sguardo a domani. */
+    fun toEvent(prefs: Prefs, from: Place, event: Event): List<Travel> {
+        val to = runCatching { geocode(prefs, event.location, near = from) }.getOrNull() ?: return emptyList()
+        val hm = DateTimeFormatter.ofPattern("HH:mm")
+        return prefs.travelModes.mapNotNull { mode ->
+            runCatching {
+                if (mode == "transit") transit(from, to, event.start)?.let { Travel(event.title, it.minutes, 0.0, it.departure, mode, it.lines) }
+                else route(mode, from, to)?.let { (min, km) -> Travel(event.title, min, km, event.start.minusMinutes(min + 5), mode) }
+            }.getOrNull()
+        }
+    }
+
     private class Ride(val minutes: Long, val departure: LocalDateTime, val lines: String)
 
     /**
@@ -200,8 +220,11 @@ object TravelRepo {
                 }
             }
         }
-        val work = prefs.workAddress
-        if (work.isNotBlank()) (prefs.workPoint ?: runCatching { geocode(prefs, work) }.getOrNull())?.let { add("Lavoro", it, null) }
+        prefs.places.forEach { place ->
+            val to = (if (place.lat != null && place.lon != null) place.lat to place.lon else runCatching { geocode(prefs, place.address) }.getOrNull()) ?: return@forEach
+            // Se ci si trova già lì (entro 300 metri) non c'è nessun tragitto da mostrare.
+            if (meters(from.lat, from.lon, to.first, to.second) > 300) add(place.name.ifBlank { "Destinazione" }, to, null)
+        }
         val now = LocalDateTime.now()
         val next = today.firstOrNull { !it.allDay && it.location.isNotBlank() && it.start.isAfter(now) }
         if (next != null) runCatching { geocode(prefs, next.location, near = from) }.getOrNull()?.let { add(next.title, it, next.start) }

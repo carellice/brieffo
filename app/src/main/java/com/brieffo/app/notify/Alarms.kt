@@ -14,6 +14,8 @@ import android.os.Build
 object Alarms {
     const val BRIEF = "com.brieffo.app.action.BRIEF"
     const val MATCH = "com.brieffo.app.action.MATCH"
+    const val LEAVE = "com.brieffo.app.action.LEAVE"
+    const val LIVE = "com.brieffo.app.action.LIVE"
 
     private fun intent(ctx: Context, action: String) = PendingIntent.getBroadcast(
         ctx, 0, Intent(ctx, AlarmReceiver::class.java).setAction(action),
@@ -45,9 +47,14 @@ class AlarmReceiver : BroadcastReceiver() {
                 BriefWorker.schedule(ctx)
             }
             Alarms.MATCH -> MatchReminder.show(ctx)
+            Alarms.LEAVE -> LeaveReminder.show(ctx)
+            Alarms.LIVE -> LiveMatch.poll(ctx)
             Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED -> {
                 BriefWorker.schedule(ctx)
                 MatchReminder.restore(ctx)
+                LeaveReminder.restore(ctx)
+                // Il prossimo controllo della partita si riprogramma rileggendo i dati.
+                LiveMatch.poll(ctx)
             }
         }
     }

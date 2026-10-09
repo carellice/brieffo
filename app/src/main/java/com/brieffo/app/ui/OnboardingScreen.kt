@@ -177,8 +177,7 @@ fun OnboardingScreen(prefs: Prefs, onGrantBasics: () -> Unit, onConnectHealth: (
     var feeds by remember { mutableStateOf(prefs.feeds) }
     var team by remember { mutableStateOf(prefs.team) }
     var teamRef by remember { mutableStateOf(prefs.teamRef) }
-    var work by remember { mutableStateOf(prefs.workAddress) }
-    var workPoint by remember { mutableStateOf(prefs.workPoint?.let { "${it.first},${it.second}" } ?: "") }
+    var places by remember { mutableStateOf(prefs.places) }
     var modes by remember { mutableStateOf(prefs.travelModes) }
     var notify by remember { mutableStateOf(prefs.notifyEnabled) }
     var pickTime by remember { mutableStateOf(false) }
@@ -205,8 +204,7 @@ fun OnboardingScreen(prefs: Prefs, onGrantBasics: () -> Unit, onConnectHealth: (
         prefs.feeds = feeds
         prefs.team = team
         prefs.teamRef = teamRef
-        prefs.workAddress = work
-        prefs.workPoint = workPoint.split(',').mapNotNull { it.toDoubleOrNull() }.takeIf { it.size == 2 }?.let { it[0] to it[1] }
+        prefs.places = places
         prefs.travelModes = modes
         prefs.notifyEnabled = notify
         prefs.notifyHour = time.hour
@@ -309,7 +307,7 @@ fun OnboardingScreen(prefs: Prefs, onGrantBasics: () -> Unit, onConnectHealth: (
                         if (CardKeys.SPORT !in hidden && CardKeys.TRAVEL !in hidden) Spacer(Modifier.height(12.dp))
                         if (CardKeys.TRAVEL !in hidden) Panel {
                             Text("Dove lavori o studi", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                            TravelSetup(work, workPoint, modes, "Via, numero e città: ti dirò quanto ci metti ad arrivare", { address, point -> work = address; workPoint = point }) { modes = it }
+                            TravelSetup(places, modes, "Via, numero e città: ti dirò quanto ci metti ad arrivare", { places = it }) { modes = it }
                         }
                         if (CardKeys.SPORT in hidden && CardKeys.TRAVEL in hidden) Panel {
                             Text("Hai spento sia la squadra sia gli spostamenti: qui non c'è nulla da impostare.", fontSize = 14.sp, color = p.sub)

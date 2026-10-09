@@ -8,4 +8,6 @@
     <string name="widget_agenda_desc">I prossimi impegni di oggi e di domani</string>
     <string name="widget_summary">Riepilogo</string>
     <string name="widget_summary_desc">Il riepilogo della tua giornata</string>
+    <string name="widget_day">La mia giornata</string>
+    <string name="widget_day_desc">Meteo, prossimo impegno e partita in un solo riquadro</string>
 </resources>

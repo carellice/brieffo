@@ -28,7 +28,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material.icons.rounded.MyLocation
 import androidx.compose.material3.Button
@@ -70,6 +72,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import com.brieffo.app.data.Address
 import com.brieffo.app.data.Prefs
+import com.brieffo.app.data.SavedPlace
 import com.brieffo.app.data.TravelRepo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -85,23 +88,23 @@ import org.osmdroid.views.overlay.MapEventsOverlay
 import org.osmdroid.views.overlay.Marker
 
 /**
- * Tutto ciò che serve per i tempi di spostamento: l'indirizzo del lavoro (scritto a mano o cercato sulla mappa),
- * i mezzi con cui calcolare il tragitto, anche più d'uno, e la scelta di usare la posizione precisa.
- * [point] sono le coordinate dell'indirizzo ("lat,lon"), vuote se è stato solo scritto a mano.
+ * Tutto ciò che serve per i tempi di spostamento: le destinazioni salvate (lavoro, casa, palestra…), ciascuna con
+ * l'indirizzo scritto a mano o cercato sulla mappa, i mezzi con cui calcolare il tragitto, anche più d'uno,
+ * e la scelta di usare la posizione precisa.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun TravelSetup(
-    work: String,
-    point: String,
+    places: List<SavedPlace>,
     modes: List<String>,
     hint: String,
-    onAddress: (String, String) -> Unit,
+    onPlaces: (List<SavedPlace>) -> Unit,
     onModes: (List<String>) -> Unit,
 ) {
     val p = LocalPalette.current
     val context = LocalContext.current
-    var picking by remember { mutableStateOf(false) }
+    // Indice della destinazione di cui si sta cercando l'indirizzo sulla mappa, o -1.
+    var picking by remember { mutableIntStateOf(-1) }
     var check by remember { mutableIntStateOf(0) }
     LifecycleResumeEffect(Unit) {
         check++
@@ -110,13 +113,36 @@ internal fun TravelSetup(
     val precise = remember(check) { ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED }
     val askPrecise = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { check++ }
 
-    // Scrivendo a mano le coordinate di prima non valgono più: l'indirizzo verrà cercato al momento del calcolo.
-    Field(work, { onAddress(it, "") }, "Indirizzo del lavoro", hint = hint)
-    OutlinedButton(onClick = { picking = true }, modifier = Modifier.fillMaxWidth()) {
-        Icon(Icons.Rounded.Map, null, Modifier.size(18.dp), tint = p.accent)
-        Text(if (point.isBlank()) "Cerca sulla mappa" else "Cambia sulla mappa", color = p.accent, modifier = Modifier.padding(start = 8.dp))
+    // Si parte sempre con almeno una riga da compilare: la prima è il lavoro.
+    val rows = places.ifEmpty { listOf(SavedPlace("Lavoro", "")) }
+    fun change(i: Int, place: SavedPlace) = onPlaces(rows.mapIndexed { j, old -> if (j == i) place else old })
+    rows.forEachIndexed { i, place ->
+        if (i > 0) Spacer(Modifier.height(14.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(
+                place.name, { change(i, place.copy(name = it)) }, label = { Text("Nome") }, singleLine = true,
+                shape = RoundedCornerShape(16.dp), modifier = Modifier.weight(1f),
+            )
+            if (rows.size > 1 || place.address.isNotBlank()) IconButton(onClick = { onPlaces(rows - place) }) {
+                Icon(Icons.Rounded.DeleteOutline, "Elimina ${place.name}", tint = p.sub)
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        // Scrivendo a mano le coordinate di prima non valgono più: l'indirizzo verrà cercato al momento del calcolo.
+        Field(place.address, { change(i, place.copy(address = it, lat = null, lon = null)) }, "Indirizzo", hint = if (i == 0) hint else null)
+        OutlinedButton(onClick = { picking = i }, modifier = Modifier.fillMaxWidth()) {
+            Icon(Icons.Rounded.Map, null, Modifier.size(18.dp), tint = p.accent)
+            Text(if (place.lat == null) "Cerca sulla mappa" else "Confermato sulla mappa · cambia", color = p.accent, modifier = Modifier.padding(start = 8.dp))
+        }
     }
-    if (point.isNotBlank()) Note("Posizione confermata sulla mappa.")
+    if (rows.all { it.address.isNotBlank() } && rows.size < 6) OutlinedButton(
+        onClick = { onPlaces(rows + SavedPlace(listOf("Casa", "Palestra", "Università", "Altro").firstOrNull { n -> rows.none { it.name == n } } ?: "Altro", "")) },
+        modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+    ) {
+        Icon(Icons.Rounded.Add, null, Modifier.size(18.dp), tint = p.accent)
+        Text("Aggiungi una destinazione", color = p.accent, modifier = Modifier.padding(start = 8.dp))
+    }
+    if (rows.size > 1) Note("Nel brief compaiono tutte, tranne quella in cui ti trovi già.")
 
     Spacer(Modifier.height(10.dp))
     Note("Con quali mezzi (anche più di uno)")
@@ -147,15 +173,17 @@ internal fun TravelSetup(
         }
     }
 
-    if (picking) AddressPicker(
-        initial = point.split(',').mapNotNull { it.toDoubleOrNull() }.takeIf { it.size == 2 }?.let { Address(work, it[0], it[1]) },
-        query = work,
-        onDismiss = { picking = false },
-        onPick = { a ->
-            onAddress(a.label, "${a.lat},${a.lon}")
-            picking = false
-        },
-    )
+    rows.getOrNull(picking)?.let { place ->
+        AddressPicker(
+            initial = if (place.lat != null && place.lon != null) Address(place.address, place.lat, place.lon) else null,
+            query = place.address,
+            onDismiss = { picking = -1 },
+            onPick = { a ->
+                change(picking, place.copy(address = a.label, lat = a.lat, lon = a.lon))
+                picking = -1
+            },
+        )
+    }
 }
 
 /**

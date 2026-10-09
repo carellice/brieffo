@@ -23,6 +23,8 @@ import com.brieffo.app.data.Summary
 import com.brieffo.app.data.UsageRepo
 import com.brieffo.app.data.UsageState
 import com.brieffo.app.data.WeatherRepo
+import com.brieffo.app.notify.LeaveReminder
+import com.brieffo.app.notify.LiveMatch
 import com.brieffo.app.widget.WidgetStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -68,7 +70,7 @@ class BriefViewModel(app: Application) : AndroidViewModel(app) {
             val savedAi = prefs.aiSummary.takeIf { !forceAi && it.isNotBlank() && System.currentTimeMillis() - prefs.aiSummaryAt < MAX_AGE }
             _state.update {
                 it.copy(
-                    loading = true, summaryLoading = key.isNotBlank() && savedAi == null, now = now, daypart = Daypart.of(now.hour),
+                    loading = true, summaryLoading = key.isNotBlank() && savedAi == null, summaryPartial = "", now = now, daypart = Daypart.of(now.hour),
                     name = prefs.name, stepGoal = prefs.stepGoal,
                     calendarGranted = CalendarRepo.granted(app),
                     moon = DeviceRepo.moon(), battery = DeviceRepo.battery(app),
@@ -83,7 +85,7 @@ class BriefViewModel(app: Application) : AndroidViewModel(app) {
                     summaryCollapsed = prefs.summaryCollapsed,
                     railRight = prefs.railRight,
                     weatherAnimated = prefs.weatherAnimated,
-                    travelConfigured = prefs.workAddress.isNotBlank(),
+                    travelConfigured = prefs.places.isNotEmpty(),
                     sportConfigured = prefs.team.isNotBlank() || prefs.teamRef.isNotBlank(),
                     newsConfigured = prefs.feeds.any { f -> f.enabled },
                     nextAlarm = OccasionsRepo.nextAlarm(app),
@@ -119,6 +121,17 @@ class BriefViewModel(app: Application) : AndroidViewModel(app) {
                 launch(Dispatchers.IO) {
                     val t = if (on(CardKeys.TRAVEL)) runCatching { WeatherRepo.travelOrigin(app, prefs)?.let { TravelRepo.load(prefs, it, events.await().first) } }.getOrNull() else null
                     _state.update { it.copy(travel = t ?: emptyList()) }
+                    // Con i tragitti aggiornati si (ri)programma l'avviso "è ora di partire".
+                    if (t != null) runCatching { LeaveReminder.plan(app, t) }
+                }
+                launch(Dispatchers.IO) {
+                    // La sera si calcola anche quando uscire per il primo impegno di domani.
+                    val evening = Daypart.of(now.hour).let { it == Daypart.EVENING || it == Daypart.NIGHT }
+                    val first = events.await().second.firstOrNull { !it.allDay }
+                    val t = if (evening && on(CardKeys.TOMORROW) && on(CardKeys.TRAVEL) && first != null && first.location.isNotBlank()) {
+                        runCatching { WeatherRepo.travelOrigin(app, prefs)?.let { TravelRepo.toEvent(prefs, it, first) } }.getOrNull()
+                    } else null
+                    _state.update { it.copy(tomorrowTravel = t ?: emptyList()) }
                 }
                 if (on(CardKeys.HEALTH)) launch(Dispatchers.IO) {
                     val h = runCatching { HealthRepo.load(app) }.getOrDefault(HealthState.Unavailable)
@@ -143,6 +156,8 @@ class BriefViewModel(app: Application) : AndroidViewModel(app) {
                 launch(Dispatchers.IO) {
                     val sp = if (on(CardKeys.SPORT)) runCatching { SportRepo.load(prefs) }.getOrNull() else null
                     _state.update { it.copy(sport = sp) }
+                    // Se la squadra sta giocando, o giocherà, la diretta si regola su questi dati.
+                    if (sp != null) runCatching { LiveMatch.update(app, sp) }
                 }
                 if (on(CardKeys.OCCASIONS)) launch(Dispatchers.IO) {
                     val o = Occasions(
@@ -162,15 +177,16 @@ class BriefViewModel(app: Application) : AndroidViewModel(app) {
                 // Il riepilogo dell'app resta di riserva: finché Gemini scrive, la scheda mostra il caricamento.
                 _state.update { it.copy(loading = false, aiError = null) }
                 val snapshot = _state.value
-                runCatching { withContext(Dispatchers.IO) { Summary.gemini(key, snapshot, prefs.aiSpeed) } }
+                // Il testo compare riga per riga mentre Gemini lo scrive.
+                runCatching { withContext(Dispatchers.IO) { Summary.gemini(key, snapshot, prefs.aiSpeed) { partial -> _state.update { it.copy(summaryPartial = partial) } } } }
                     .onSuccess { text ->
                         prefs.aiSummary = text
-                        _state.update { it.copy(summary = text, summaryByAi = true, summaryLoading = false) }
+                        _state.update { it.copy(summary = text, summaryByAi = true, summaryLoading = false, summaryPartial = "") }
                     }
                     .onFailure { e ->
                         if (e is CancellationException) throw e
                         _state.update {
-                            it.copy(summary = Summary.rules(it), summaryByAi = false, summaryLoading = false, aiError = e.message ?: "connessione non riuscita")
+                            it.copy(summary = Summary.rules(it), summaryByAi = false, summaryLoading = false, summaryPartial = "", aiError = e.message ?: "connessione non riuscita")
                         }
                     }
             }

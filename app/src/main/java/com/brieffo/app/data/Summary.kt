@@ -92,7 +92,11 @@ object Summary {
     }
 
     /** Riscrive il riepilogo con Gemini (piano gratuito di Google AI Studio, chiave dell'utente). */
-    fun gemini(apiKey: String, s: BriefState, speed: String = "balanced"): String {
+    /** Mette in ordine il testo di Gemini: una riga per argomento, senza trattini o righe vuote. */
+    private fun tidy(text: String) = text.lines().map { it.trim().trimStart('-', '•').trim() }.filter { it.isNotEmpty() }.joinToString("\n")
+
+    /** [onPartial] riceve il testo man mano che Gemini lo scrive, così può comparire subito sullo schermo. */
+    fun gemini(apiKey: String, s: BriefState, speed: String = "balanced", onPartial: ((String) -> Unit)? = null): String {
         val health = (s.health as? HealthState.Data)?.health
         val usage = (s.usage as? UsageState.Data)?.usage
         val today = java.time.LocalDate.now()
@@ -173,7 +177,7 @@ object Summary {
             DATI:
         """.trimIndent() + "\n" + data
 
-        return ask(apiKey, prompt, speed).lines().map { it.trim().trimStart('-', '•').trim() }.filter { it.isNotEmpty() }.joinToString("\n")
+        return tidy(ask(apiKey, prompt, speed, onText = onPartial?.let { show -> { partial -> show(tidy(partial)) } }))
     }
 
     /** Prova la chiave con una domanda minima: restituisce il nome del modello che ha risposto. */
@@ -251,28 +255,29 @@ object Summary {
     }
 
     /** Manda [prompt] a Gemini e restituisce il testo della risposta. */
-    private fun ask(apiKey: String, prompt: String, speed: String, onModel: (String) -> Unit = {}): String {
+    private fun ask(apiKey: String, prompt: String, speed: String, onText: ((String) -> Unit)? = null, onModel: (String) -> Unit = {}): String {
         val plan = SPEEDS[speed] ?: SPEEDS.getValue("balanced")
         return withModels(plan.map { it.first }) { model ->
             val thinking = plan.first { it.first == model }.second
             val text = try {
-                askModel(apiKey, prompt, model, thinking)
+                askModel(apiKey, prompt, model, thinking, onText)
             } catch (e: GeminiException) {
                 // Se il modello di turno non accetta quel livello di ragionamento, si riprova lasciandogli il suo.
                 if (thinking == null || !e.badRequest) throw e
-                askModel(apiKey, prompt, model, null)
+                askModel(apiKey, prompt, model, null, onText)
             }
             onModel(model)
             text
         }
     }
 
-    private fun askModel(apiKey: String, prompt: String, model: String, thinking: String?): String {
+    private fun askModel(apiKey: String, prompt: String, model: String, thinking: String?, onText: ((String) -> Unit)? = null): String {
         val config = JSONObject().put("temperature", 0.7).put("maxOutputTokens", 4096)
         if (thinking != null) config.put("thinkingConfig", JSONObject().put("thinkingLevel", thinking))
         val body = JSONObject()
             .put("contents", JSONArray().put(JSONObject().put("parts", JSONArray().put(JSONObject().put("text", prompt)))))
             .put("generationConfig", config)
+        if (onText != null) return stream("https://generativelanguage.googleapis.com/v1beta/models/$model:streamGenerateContent?alt=sse", apiKey, body, model, onText)
         val r = post("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent", apiKey, body, model)
         val candidate = r.optJSONArray("candidates")?.optJSONObject(0)
         val parts = candidate?.optJSONObject("content")?.optJSONArray("parts")
@@ -305,7 +310,43 @@ object Summary {
         throw last ?: GeminiException("nessun modello disponibile")
     }
 
+    /**
+     * Come [post], ma la risposta arriva a pezzi mentre il modello scrive: a ogni pezzo [onText] riceve
+     * tutto il testo ricevuto fin lì. Restituisce il testo completo.
+     */
+    private fun stream(url: String, apiKey: String, body: JSONObject, model: String, onText: (String) -> Unit): String {
+        val c = connect(url, apiKey, body, model)
+        try {
+            val all = StringBuilder()
+            c.inputStream.bufferedReader().useLines { lines ->
+                for (line in lines) {
+                    if (!line.startsWith("data:")) continue
+                    val o = runCatching { JSONObject(line.removePrefix("data:").trim()) }.getOrNull() ?: continue
+                    val parts = o.optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts") ?: continue
+                    val piece = (0 until parts.length()).map { parts.getJSONObject(it) }.filter { !it.optBoolean("thought") }.joinToString("") { it.optString("text") }
+                    if (piece.isNotEmpty()) {
+                        all.append(piece.replace("*", ""))
+                        onText(all.toString())
+                    }
+                }
+            }
+            return all.toString().trim().ifEmpty { throw GeminiException("Gemini ha risposto senza testo", retryOtherModel = true) }
+        } finally {
+            c.disconnect()
+        }
+    }
+
     private fun post(url: String, apiKey: String, body: JSONObject, model: String): JSONObject {
+        val c = connect(url, apiKey, body, model)
+        try {
+            return JSONObject(c.inputStream.bufferedReader().use { it.readText() })
+        } finally {
+            c.disconnect()
+        }
+    }
+
+    /** Apre la richiesta e controlla l'esito: se Google rifiuta, l'errore dice perché. Chi chiama chiude la connessione. */
+    private fun connect(url: String, apiKey: String, body: JSONObject, model: String): HttpURLConnection {
         val c = URL(url).openConnection() as HttpURLConnection
         try {
             c.requestMethod = "POST"
@@ -337,9 +378,10 @@ object Summary {
                     else -> GeminiException("errore $code del servizio", detail)
                 }
             }
-            return JSONObject(c.inputStream.bufferedReader().use { it.readText() })
-        } finally {
+            return c
+        } catch (e: Throwable) {
             c.disconnect()
+            throw e
         }
     }
 

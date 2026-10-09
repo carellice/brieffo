@@ -165,6 +165,51 @@ class Prefs(ctx: Context) {
         get() = sp.getString("speechVoice", "Kore") ?: "Kore"
         set(v) = sp.edit { putString("speechVoice", v) }
 
+    /** Cartella scelta per il backup automatico (indirizzo del sistema dei file); vuoto = spento. */
+    var backupFolder: String
+        get() = sp.getString("backupFolder", "") ?: ""
+        set(v) = sp.edit { putString("backupFolder", v) }
+
+    /** Quando è stato scritto l'ultimo backup automatico e l'impronta del suo contenuto, per non riscriverlo uguale. */
+    var backupAt: Long
+        get() = sp.getLong("backupAt", 0)
+        set(v) = sp.edit { putLong("backupAt", v) }
+    var backupHash: Int
+        get() = sp.getInt("backupHash", 0)
+        set(v) = sp.edit { putInt("backupHash", v) }
+
+    /** Vero se l'app avvisa poco prima dell'ora di uscire per un impegno con un luogo. */
+    var leaveAlerts: Boolean
+        get() = sp.getBoolean("leaveAlerts", true)
+        set(v) = sp.edit { putBoolean("leaveAlerts", v) }
+
+    /** Avviso di partenza in attesa: per quale impegno, quando scatta, che cosa dice, e l'ultimo già mostrato. */
+    var leaveKey: String
+        get() = sp.getString("leaveKey", "") ?: ""
+        set(v) = sp.edit { putString("leaveKey", v) }
+    var leaveAt: Long
+        get() = sp.getLong("leaveAt", 0)
+        set(v) = sp.edit { putLong("leaveAt", v) }
+    var leaveText: String
+        get() = sp.getString("leaveText", "") ?: ""
+        set(v) = sp.edit { putString("leaveText", v) }
+    var leaveDone: String
+        get() = sp.getString("leaveDone", "") ?: ""
+        set(v) = sp.edit { putString("leaveDone", v) }
+
+    /** Vero se durante le partite della squadra l'app segue il punteggio e avvisa a ogni gol. */
+    var liveAlerts: Boolean
+        get() = sp.getBoolean("liveAlerts", true)
+        set(v) = sp.edit { putBoolean("liveAlerts", v) }
+
+    /** Partita seguita in questo momento (casa|ospiti) e ultimo punteggio visto. */
+    var liveKey: String
+        get() = sp.getString("liveKey", "") ?: ""
+        set(v) = sp.edit { putString("liveKey", v) }
+    var liveScore: String
+        get() = sp.getString("liveScore", "") ?: ""
+        set(v) = sp.edit { putString("liveScore", v) }
+
     /** Quando deve scattare il promemoria della partita (millisecondi) e che cosa deve dire. */
     var matchReminderAt: Long
         get() = sp.getLong("matchReminderAt", 0)
@@ -181,6 +226,26 @@ class Prefs(ctx: Context) {
     var workAddress: String
         get() = sp.getString("workAddress", "") ?: ""
         set(v) = sp.edit { putString("workAddress", v.trim()) }
+
+    /**
+     * Destinazioni per i tempi di spostamento. Chi arriva da una versione con il solo indirizzo del lavoro
+     * se lo ritrova qui come prima voce.
+     */
+    var places: List<SavedPlace>
+        get() {
+            val saved = sp.getString("places", null)
+                ?: return if (workAddress.isBlank()) emptyList() else listOf(SavedPlace("Lavoro", workAddress, workPoint?.first, workPoint?.second))
+            return runCatching {
+                val a = JSONArray(saved)
+                (0 until a.length()).map { a.getJSONObject(it) }.map { o ->
+                    SavedPlace(o.optString("name"), o.optString("address"), o.optDouble("lat").takeIf { !it.isNaN() }, o.optDouble("lon").takeIf { !it.isNaN() })
+                }
+            }.getOrDefault(emptyList())
+        }
+        set(v) = sp.edit {
+            val kept = v.filter { it.address.isNotBlank() }
+            putString("places", JSONArray(kept.map { JSONObject().put("name", it.name.trim()).put("address", it.address.trim()).put("lat", it.lat).put("lon", it.lon) }).toString())
+        }
 
     /** Coordinate dell'indirizzo del lavoro, se è stato scelto sulla mappa; altrimenti lo si cerca dal testo. */
     var workPoint: Pair<Double, Double>?
@@ -240,9 +305,9 @@ class Prefs(ctx: Context) {
 
     private companion object {
         const val BACKUP_APP = "brieffo"
-        val BACKUP_STRINGS = setOf("name", "city", "geminiKey", "feeds", "themeMode", "team", "teamRef", "workAddress", "workPoint", "travelModes", "travelMode", "cardOrder", "speechVoice", "speechEngine", "localVoice", "aiSpeed")
+        val BACKUP_STRINGS = setOf("name", "city", "geminiKey", "feeds", "themeMode", "team", "teamRef", "workAddress", "workPoint", "places", "travelModes", "travelMode", "cardOrder", "speechVoice", "speechEngine", "localVoice", "aiSpeed")
         val BACKUP_INTS = setOf("stepGoal", "notifyHour", "notifyMinute", "accent", "speechSpeed")
-        val BACKUP_BOOLEANS = setOf("notifyEnabled", "summaryCollapsed", "railRight", "weatherAnimated")
+        val BACKUP_BOOLEANS = setOf("notifyEnabled", "summaryCollapsed", "railRight", "weatherAnimated", "leaveAlerts", "liveAlerts")
         val BACKUP_SETS = setOf("hidden")
     }
 }

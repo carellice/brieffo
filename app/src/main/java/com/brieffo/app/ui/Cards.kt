@@ -199,9 +199,14 @@ fun SummaryCard(s: BriefState) {
         icon = Icons.Rounded.AutoAwesome,
     ) {
         // Finché Gemini scrive si vede sempre il segnaposto animato, anche se c'era già un riepilogo.
-        val skeleton = s.summaryLoading
+        val streaming = s.summaryLoading && s.summaryPartial.isNotBlank()
+        val skeleton = s.summaryLoading && !streaming
         when {
             skeleton -> SummarySkeleton()
+            // Gemini ha cominciato a rispondere: le righe compaiono man mano che arrivano.
+            streaming -> Column(Modifier.animateContentSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                s.summaryPartial.lines().filter { it.isNotBlank() }.forEach { SummaryLine(it) }
+            }
             s.summaryByAi -> {
                 val lines = s.summary.lines().filter { it.isNotBlank() }
                 // Il riepilogo può essere lungo: chiuso mostra solo le prime righe, le più importanti.
@@ -241,7 +246,7 @@ fun SummaryCard(s: BriefState) {
         if (s.aiError != null && !skeleton) {
             Text("Gemini non ha risposto (${s.aiError}): questo è il riepilogo dell'app.", fontSize = 12.sp, color = p.sub, modifier = Modifier.padding(top = 10.dp))
         }
-        if (!skeleton && s.summary.isNotEmpty()) {
+        if (!s.summaryLoading && s.summary.isNotEmpty()) {
             val speaker = rememberSpeaker()
             OutlinedButton(onClick = { speaker.toggle(s.summary) }, modifier = Modifier.padding(top = 12.dp)) {
                 when (speaker.status) {

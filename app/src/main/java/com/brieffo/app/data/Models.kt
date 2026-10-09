@@ -130,6 +130,9 @@ data class WxAlert(val type: String, val level: Int, val until: LocalDateTime?, 
 /** Un tragitto verso [label] con un certo mezzo ([mode], una chiave di TravelRepo.MODES); [detail] sono le linee dei mezzi pubblici. */
 data class Travel(val label: String, val minutes: Long, val km: Double, val leaveBy: LocalDateTime? = null, val mode: String = "car", val detail: String? = null)
 
+/** Destinazione salvata dall'utente (lavoro, casa, palestra…); senza coordinate l'indirizzo viene cercato dal testo. */
+data class SavedPlace(val name: String, val address: String, val lat: Double? = null, val lon: Double? = null)
+
 /** Indirizzo trovato sulla mappa. */
 data class Address(val label: String, val lat: Double, val lon: Double)
 
@@ -184,12 +187,17 @@ object CardKeys {
     const val HEALTH = "health"; const val USAGE = "usage"; const val NEWS = "news"
     const val MARKETS = "markets"; const val TRAVEL = "travel"; const val SPORT = "sport"
     const val OCCASIONS = "occasions"; const val EXTRAS = "extras"
+    /** Lo sguardo a domani: compare solo nel brief della sera e della notte. */
+    const val TOMORROW = "tomorrow"
 
     /** Schede che si possono riordinare, nell'ordine proposto a chi inizia a sistemarle a mano. */
-    val sortable = listOf(WEATHER, AGENDA, TRAVEL, HEALTH, USAGE, NEWS, SPORT, MARKETS, OCCASIONS, EXTRAS)
+    val sortable = listOf(TOMORROW, WEATHER, AGENDA, TRAVEL, HEALTH, USAGE, NEWS, SPORT, MARKETS, OCCASIONS, EXTRAS)
 
     /** Ordine completo a partire da quello salvato: via le chiavi sconosciute, in coda le schede che mancano. */
-    fun ordered(saved: List<String>) = saved.filter { it in sortable }.distinct().let { it + (sortable - it.toSet()) }
+    fun ordered(saved: List<String>) = saved.filter { it in sortable }.distinct().let { known ->
+        // Chi aveva già scelto un ordine prima che esistesse "Domani" se lo ritrova in cima, dove serve la sera.
+        (if (TOMORROW in known) emptyList() else listOf(TOMORROW)) + known + (sortable - known.toSet() - TOMORROW)
+    }
 
     val labels = linkedMapOf(
         WEATHER to "Meteo", ALERTS to "Allerte meteo", POLLEN to "Pollini",
@@ -197,6 +205,7 @@ object CardKeys {
         TRAVEL to "Tempi di spostamento", HEALTH to "Salute e attività", USAGE to "Tempo di utilizzo",
         NEWS to "Notizie", SPORT to "La tua squadra", MARKETS to "Mercati",
         OCCASIONS to "Ricorrenze (santi, compleanni, festività)", EXTRAS to "In breve (luna, batteria, sveglia)",
+        TOMORROW to "Domani (solo la sera)",
     )
 }
 
@@ -210,6 +219,8 @@ data class BriefState(
     val summaryByAi: Boolean = false,
     /** Vero mentre Gemini sta scrivendo il riepilogo. */
     val summaryLoading: Boolean = false,
+    /** Il testo che Gemini ha scritto finora, mentre sta ancora scrivendo; vuoto prima e dopo. */
+    val summaryPartial: String = "",
     /** Vero se il riepilogo di Gemini va mostrato chiuso finché l'utente non lo apre. */
     val summaryCollapsed: Boolean = false,
     /** Vero se l'icona e la scheda del meteo si muovono secondo il tempo che fa. */
@@ -237,6 +248,8 @@ data class BriefState(
     val cardOrder: List<String> = emptyList(),
     val alerts: List<WxAlert> = emptyList(),
     val travel: List<Travel> = emptyList(),
+    /** Tragitti verso il primo impegno di domani, per lo sguardo serale. */
+    val tomorrowTravel: List<Travel> = emptyList(),
     val travelConfigured: Boolean = false,
     val sport: Sport? = null,
     val sportConfigured: Boolean = false,

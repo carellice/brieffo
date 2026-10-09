@@ -50,7 +50,11 @@ import com.brieffo.app.data.Prefs
 import com.brieffo.app.data.SportRepo
 import com.brieffo.app.data.Summary
 import com.brieffo.app.data.wxText
+import com.brieffo.app.data.TravelRepo
+import com.brieffo.app.data.WeatherRepo
 import com.brieffo.app.notify.BriefWorker
+import com.brieffo.app.notify.LeaveReminder
+import com.brieffo.app.notify.LiveMatch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
@@ -90,6 +94,7 @@ object Widgets {
             WeatherWidget().updateAll(ctx)
             AgendaWidget().updateAll(ctx)
             SummaryWidget().updateAll(ctx)
+            DayWidget().updateAll(ctx)
         }
     }
 }
@@ -297,6 +302,66 @@ class SummaryWidget : GlanceAppWidget() {
     }
 }
 
+/** Tutto in un riquadro: il meteo di adesso, il prossimo impegno e la partita. */
+class DayWidget : GlanceAppWidget() {
+    override suspend fun provideGlance(context: Context, id: GlanceId) {
+        val data = WidgetStore.load(context)
+        provideContent {
+            if (data == null) {
+                Empty("La mia giornata", "Apri Brieffo per caricare i dati.")
+                return@provideContent
+            }
+            val now = LocalDateTime.now()
+            val event = data.events.firstOrNull { it.allDay || it.start.isAfter(now.minusMinutes(30)) }
+            val w = data.weather
+            val m = data.match
+            Frame(vertical = Alignment.Top) {
+                Row(GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+                    Column(GlanceModifier.defaultWeight()) {
+                        Text((w?.place ?: "Meteo").uppercase(), style = title(), maxLines = 1)
+                        if (w != null) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(wxEmoji(w.code, w.isDay), style = TextStyle(fontSize = 22.sp))
+                                Spacer(GlanceModifier.width(6.dp))
+                                Text("${w.temp}°", style = body(26, bold = true))
+                            }
+                            Text(listOfNotNull(w.max?.let { "Max $it°" }, w.min?.let { "Min $it°" }).joinToString(" · "), style = faint(), maxLines = 1)
+                        } else Text("Non disponibile", style = faint())
+                    }
+                    Spacer(GlanceModifier.width(10.dp))
+                    Column(GlanceModifier.defaultWeight()) {
+                        Text("PROSSIMO IMPEGNO", style = title(), maxLines = 1)
+                        when {
+                            !data.agendaGranted -> Text("Calendario non collegato", style = faint())
+                            event == null -> Text("Nessuno tra oggi e domani", style = faint())
+                            else -> {
+                                Text(event.title, style = body(14, bold = true), maxLines = 2)
+                                Text(
+                                    (if (event.start.toLocalDate() == now.toLocalDate()) "Oggi" else "Domani") + if (event.allDay) ", tutto il giorno" else " alle ${event.start.format(hm)}",
+                                    style = faint(), maxLines = 1,
+                                )
+                            }
+                        }
+                    }
+                }
+                if (m != null) {
+                    Spacer(GlanceModifier.defaultWeight())
+                    val played = m.homeScore != null && m.awayScore != null
+                    Text(
+                        "⚽ " + (if (played) "${m.home} ${m.homeScore} – ${m.awayScore} ${m.away}" else "${m.home} – ${m.away}") +
+                            when {
+                                m.live -> " · in corso"
+                                m.date != null -> " · ${dayLabel(m.date.toLocalDate())} ${m.date.format(hm)}"
+                                else -> ""
+                            },
+                        style = body(13), maxLines = 1,
+                    )
+                }
+            }
+        }
+    }
+}
+
 /** I widget si tengono aggiornati da soli: finché ce n'è almeno uno sulla Home, un lavoro periodico rilegge i dati. */
 abstract class BriefWidgetReceiver : GlanceAppWidgetReceiver() {
     override fun onEnabled(context: Context) {
@@ -309,6 +374,7 @@ class MatchWidgetReceiver : BriefWidgetReceiver() { override val glanceAppWidget
 class WeatherWidgetReceiver : BriefWidgetReceiver() { override val glanceAppWidget = WeatherWidget() }
 class AgendaWidgetReceiver : BriefWidgetReceiver() { override val glanceAppWidget = AgendaWidget() }
 class SummaryWidgetReceiver : BriefWidgetReceiver() { override val glanceAppWidget = SummaryWidget() }
+class DayWidgetReceiver : BriefWidgetReceiver() { override val glanceAppWidget = DayWidget() }
 
 /** Rilegge meteo, agenda e partite in background e ridisegna i widget, senza che serva aprire l'app. */
 class WidgetWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, params) {
@@ -318,6 +384,11 @@ class WidgetWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx
         val base = BriefWorker.buildState(ctx)
         val sport = if (base.shows(CardKeys.SPORT)) runCatching { SportRepo.load(prefs) }.getOrNull() else null
         val state = base.copy(sport = sport)
+        if (sport != null) runCatching { LiveMatch.update(ctx, sport) }
+        // Anche senza aprire l'app l'avviso di partenza resta aggiornato sul prossimo impegno.
+        if (base.shows(CardKeys.TRAVEL) && prefs.leaveAlerts && base.today.any { it.location.isNotBlank() }) runCatching {
+            WeatherRepo.travelOrigin(ctx, prefs)?.let { LeaveReminder.plan(ctx, TravelRepo.load(prefs, it, base.today)) }
+        }
         // Il riepilogo di Gemini resta quello dell'ultima apertura finché è recente: qui non si chiama l'IA.
         val ai = prefs.aiSummary.takeIf { prefs.geminiKey.isNotBlank() && it.isNotBlank() && System.currentTimeMillis() - prefs.aiSummaryAt < 4 * 60 * 60 * 1000L }
         WidgetStore.update(ctx, state.copy(summary = ai ?: Summary.rules(state)))
