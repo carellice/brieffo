@@ -690,7 +690,7 @@ fun SettingsScreen(
         }
 
         if (CardKeys.TRAVEL !in hidden) SettingsSection("Spostamenti", Icons.Rounded.Commute, places.filter { it.address.isNotBlank() }.joinToString(", ") { it.name.ifBlank { "Destinazione" } }.ifBlank { "Nessuna destinazione" }, "Spostamenti" in openSections, { openSections = if ("Spostamenti" in openSections) openSections - "Spostamenti" else openSections + "Spostamenti" }) {
-            TravelSetup(places, modes, "Via, numero e città. Lascia vuoto se non ti serve", { places = it }) { modes = it }
+            TravelSetup(places, modes, { places = it }) { modes = it }
         }
 
         SettingsSection("Lettura ad alta voce", Icons.Rounded.RecordVoiceOver, when (speechEngine) { "local" -> "Voce locale"; "gemini" -> "Voce di Gemini"; else -> "Voce del telefono" } + " · %.1f×".format(speechSpeed / 100f), "Lettura ad alta voce" in openSections, { openSections = if ("Lettura ad alta voce" in openSections) openSections - "Lettura ad alta voce" else openSections + "Lettura ad alta voce" }) {

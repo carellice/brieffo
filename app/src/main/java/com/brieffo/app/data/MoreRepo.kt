@@ -1,5 +1,6 @@
 package com.brieffo.app.data
 
+import java.time.LocalTime
 import java.time.temporal.ChronoUnit
 import java.time.format.DateTimeFormatter
 import android.Manifest
@@ -150,16 +151,72 @@ object TravelRepo {
         return 6_371_000 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h))
     }
 
+    /** Le sole destinazioni che si possono salvare. */
+    val PRESETS = listOf("Casa", "Lavoro", "Scuola", "Palestra")
+
+    /** Coordinate di una destinazione: quelle scelte sulla mappa, altrimenti cercate dall'indirizzo scritto. */
+    private fun point(prefs: Prefs, place: SavedPlace) =
+        if (place.lat != null && place.lon != null) place.lat to place.lon else runCatching { geocode(prefs, place.address) }.getOrNull()
+
+    /**
+     * I tragitti da [from] a [to] con ogni mezzo scelto. Con [arriveBy] si calcola anche l'ora entro cui uscire.
+     * Restituisce i tragitti riusciti e i mezzi per cui il calcolo non è andato.
+     */
+    private fun rides(prefs: Prefs, from: Place, label: String, to: Pair<Double, Double>, arriveBy: LocalDateTime?): Pair<List<Travel>, List<String>> {
+        val hm = DateTimeFormatter.ofPattern("HH:mm")
+        val done = mutableListOf<Travel>()
+        val failed = mutableListOf<String>()
+        prefs.travelModes.forEach { mode ->
+            val ride = runCatching {
+                if (mode == "transit") transit(from, to, arriveBy)?.let { r ->
+                    Travel(label, r.minutes, 0.0, if (arriveBy != null) r.departure else null, mode, r.lines + if (arriveBy == null) " · parte alle ${r.departure.format(hm)}" else "")
+                } else route(mode, from, to)?.let { (min, km) ->
+                    // Cinque minuti di margine per parcheggio e imprevisti.
+                    Travel(label, min, km, arriveBy?.minusMinutes(min + 5), mode)
+                }
+            }.getOrNull()
+            if (ride != null) done += ride else failed += mode
+        }
+        return done to failed
+    }
+
     /** I tragitti verso un singolo impegno, con ogni mezzo scelto: servono al promemoria di partenza e allo sguardo a domani. */
     fun toEvent(prefs: Prefs, from: Place, event: Event): List<Travel> {
         val to = runCatching { geocode(prefs, event.location, near = from) }.getOrNull() ?: return emptyList()
-        val hm = DateTimeFormatter.ofPattern("HH:mm")
-        return prefs.travelModes.mapNotNull { mode ->
-            runCatching {
-                if (mode == "transit") transit(from, to, event.start)?.let { Travel(event.title, it.minutes, 0.0, it.departure, mode, it.lines) }
-                else route(mode, from, to)?.let { (min, km) -> Travel(event.title, min, km, event.start.minusMinutes(min + 5), mode) }
-            }.getOrNull()
+        return rides(prefs, from, event.title, to, event.start).first
+    }
+
+    /**
+     * Per quale giorno serve il tragitto verso il lavoro: oggi finché non si è ancora entrati (o, senza risposta,
+     * fino a mezzogiorno), domani dalle 17 in poi. Negli altri momenti nessuno.
+     */
+    fun commuteDay(prefs: Prefs, now: LocalDateTime): LocalDate? {
+        val today = now.toLocalDate()
+        val answer = prefs.workStart(today)
+        val todayOpen = when {
+            answer == "off" -> false
+            answer != null -> runCatching { LocalTime.parse(answer).isAfter(now.toLocalTime()) }.getOrDefault(false)
+            else -> now.hour < 12
         }
+        return when {
+            todayOpen -> today
+            now.hour >= 17 -> today.plusDays(1)
+            else -> null
+        }
+    }
+
+    /** Il tragitto verso il lavoro per oggi o domani, partendo da [from], per arrivare all'orario detto dall'utente. */
+    fun commute(prefs: Prefs, from: Place?, now: LocalDateTime = LocalDateTime.now()): Commute? {
+        val work = prefs.places.firstOrNull { it.name == "Lavoro" } ?: return null
+        val day = commuteDay(prefs, now) ?: return null
+        val answer = prefs.workStart(day) ?: return Commute(day)
+        if (answer == "off") return Commute(day, off = true)
+        val start = runCatching { LocalTime.parse(answer) }.getOrNull() ?: return Commute(day)
+        val to = point(prefs, work)
+        if (from == null || to == null) return Commute(day, start, failed = prefs.travelModes)
+        if (meters(from.lat, from.lon, to.first, to.second) <= 300) return Commute(day, start, there = true)
+        val (done, failed) = rides(prefs, from, "Lavoro", to, day.atTime(start))
+        return Commute(day, start, rides = done, failed = failed)
     }
 
     private class Ride(val minutes: Long, val departure: LocalDateTime, val lines: String)
@@ -206,28 +263,18 @@ object TravelRepo {
      * Tempi stimati verso il lavoro e verso il prossimo impegno di oggi che ha un luogo, uno per ogni mezzo scelto.
      * [from] è il punto di partenza: la posizione precisa se l'utente l'ha concessa, altrimenti quella approssimata.
      */
-    fun load(prefs: Prefs, from: Place, today: List<Event>): List<Travel> {
+    fun load(prefs: Prefs, from: Place, today: List<Event>, skipWork: Boolean = false): List<Travel> {
         val out = mutableListOf<Travel>()
-        val modes = prefs.travelModes
-        val hm = DateTimeFormatter.ofPattern("HH:mm")
-        fun add(label: String, to: Pair<Double, Double>, arriveBy: LocalDateTime?) = modes.forEach { mode ->
-            runCatching {
-                if (mode == "transit") transit(from, to, arriveBy)?.let { ride ->
-                    out += Travel(label, ride.minutes, 0.0, if (arriveBy != null) ride.departure else null, mode, ride.lines + if (arriveBy == null) " · parte alle ${ride.departure.format(hm)}" else "")
-                } else route(mode, from, to)?.let { (min, km) ->
-                    // Cinque minuti di margine per parcheggio e imprevisti.
-                    out += Travel(label, min, km, arriveBy?.minusMinutes(min + 5), mode)
-                }
-            }
-        }
         prefs.places.forEach { place ->
-            val to = (if (place.lat != null && place.lon != null) place.lat to place.lon else runCatching { geocode(prefs, place.address) }.getOrNull()) ?: return@forEach
+            // Il lavoro ha già il suo tragitto calcolato sull'orario d'ingresso: qui non si ripete.
+            if (skipWork && place.name == "Lavoro") return@forEach
+            val to = point(prefs, place) ?: return@forEach
             // Se ci si trova già lì (entro 300 metri) non c'è nessun tragitto da mostrare.
-            if (meters(from.lat, from.lon, to.first, to.second) > 300) add(place.name.ifBlank { "Destinazione" }, to, null)
+            if (meters(from.lat, from.lon, to.first, to.second) > 300) out += rides(prefs, from, place.name, to, null).first
         }
         val now = LocalDateTime.now()
         val next = today.firstOrNull { !it.allDay && it.location.isNotBlank() && it.start.isAfter(now) }
-        if (next != null) runCatching { geocode(prefs, next.location, near = from) }.getOrNull()?.let { add(next.title, it, next.start) }
+        if (next != null) runCatching { geocode(prefs, next.location, near = from) }.getOrNull()?.let { out += rides(prefs, from, next.title, it, next.start).first }
         return out
     }
 }

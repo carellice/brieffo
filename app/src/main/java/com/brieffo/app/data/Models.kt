@@ -2,6 +2,7 @@ package com.brieffo.app.data
 
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.LocalTime
 
 enum class Daypart(val title: String, val greeting: String) {
     MORNING("Brief del mattino", "Buongiorno"),
@@ -133,6 +134,23 @@ data class Travel(val label: String, val minutes: Long, val km: Double, val leav
 /** Destinazione salvata dall'utente (lavoro, casa, palestra…); senza coordinate l'indirizzo viene cercato dal testo. */
 data class SavedPlace(val name: String, val address: String, val lat: Double? = null, val lon: Double? = null)
 
+/**
+ * Il tragitto verso il lavoro di oggi o di domani, calcolato per arrivare all'orario d'ingresso detto dall'utente.
+ * Senza orario ([start] null e non [off]) l'app deve ancora chiederlo.
+ */
+data class Commute(
+    val day: LocalDate,
+    val start: LocalTime? = null,
+    val off: Boolean = false,
+    val rides: List<Travel> = emptyList(),
+    /** Mezzi per cui il calcolo non è riuscito. */
+    val failed: List<String> = emptyList(),
+    /** Vero se il telefono è già al lavoro. */
+    val there: Boolean = false,
+) {
+    val needsAnswer get() = start == null && !off
+}
+
 /** Indirizzo trovato sulla mappa. */
 data class Address(val label: String, val lat: Double, val lon: Double)
 
@@ -250,6 +268,12 @@ data class BriefState(
     val travel: List<Travel> = emptyList(),
     /** Tragitti verso il primo impegno di domani, per lo sguardo serale. */
     val tomorrowTravel: List<Travel> = emptyList(),
+    /** Tragitto verso il lavoro per oggi o domani, o null se adesso non serve (o il lavoro non è impostato). */
+    val commute: Commute? = null,
+    /** Da dove partono i tragitti: la posizione precisa, quella approssimata o la città impostata. */
+    val travelFrom: String = "",
+    /** Vero se l'app può usare la posizione precisa. */
+    val preciseLocation: Boolean = false,
     val travelConfigured: Boolean = false,
     val sport: Sport? = null,
     val sportConfigured: Boolean = false,

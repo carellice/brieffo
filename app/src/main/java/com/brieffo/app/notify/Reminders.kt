@@ -63,7 +63,9 @@ object LeaveReminder {
     fun plan(ctx: Context, travel: List<Travel>) {
         val prefs = Prefs(ctx)
         val now = LocalDateTime.now()
-        val next = travel.firstOrNull { it.leaveBy != null && it.leaveBy.isAfter(now) }.takeIf { prefs.leaveAlerts }
+        // Per ogni destinazione conta il primo dei mezzi scelti; tra le destinazioni, quella da cui uscire prima.
+        val next = travel.filter { it.leaveBy != null && it.leaveBy.isAfter(now) }.groupBy { it.label }.values.map { it.first() }
+            .minByOrNull { it.leaveBy!! }.takeIf { prefs.leaveAlerts }
         if (next == null) {
             Alarms.cancel(ctx, Alarms.LEAVE)
             prefs.leaveAt = 0

@@ -3,6 +3,7 @@ package com.brieffo.app.data
 import android.content.Context
 import androidx.core.content.edit
 import org.json.JSONArray
+import java.time.LocalDate
 import org.json.JSONObject
 
 class Prefs(ctx: Context) {
@@ -240,12 +241,32 @@ class Prefs(ctx: Context) {
                 (0 until a.length()).map { a.getJSONObject(it) }.map { o ->
                     SavedPlace(o.optString("name"), o.optString("address"), o.optDouble("lat").takeIf { !it.isNaN() }, o.optDouble("lon").takeIf { !it.isNaN() })
                 }
+                    // Le destinazioni sono solo quelle previste (casa, lavoro…): le altre delle versioni precedenti si lasciano cadere.
+                    .filter { it.name in TravelRepo.PRESETS }.distinctBy { it.name }
             }.getOrDefault(emptyList())
         }
         set(v) = sp.edit {
             val kept = v.filter { it.address.isNotBlank() }
             putString("places", JSONArray(kept.map { JSONObject().put("name", it.name.trim()).put("address", it.address.trim()).put("lat", it.lat).put("lon", it.lon) }).toString())
         }
+
+    /** Orari d'ingresso al lavoro detti dall'utente, giorno per giorno: "HH:mm", oppure "off" se quel giorno non lavora. */
+    fun workStart(day: LocalDate): String? = runCatching { JSONObject(sp.getString("workStarts", "{}") ?: "{}").optString(day.toString()).takeIf { it.isNotBlank() } }.getOrNull()
+
+    /** Salva (o con null cancella) la risposta per [day]; i giorni passati si buttano. */
+    fun setWorkStart(day: LocalDate, value: String?) {
+        val o = runCatching { JSONObject(sp.getString("workStarts", "{}") ?: "{}") }.getOrDefault(JSONObject())
+        val yesterday = LocalDate.now().minusDays(1)
+        o.keys().asSequence().toList().filter { runCatching { LocalDate.parse(it).isBefore(yesterday) }.getOrDefault(true) }.forEach { o.remove(it) }
+        if (value == null) o.remove(day.toString()) else o.put(day.toString(), value)
+        sp.edit {
+            putString("workStarts", o.toString())
+            if (value != null && value != "off") putString("lastWorkStart", value)
+        }
+    }
+
+    /** L'ultimo orario d'ingresso indicato, proposto la volta dopo per rispondere con un tocco. */
+    val lastWorkStart: String get() = sp.getString("lastWorkStart", "09:00") ?: "09:00"
 
     /** Coordinate dell'indirizzo del lavoro, se è stato scelto sulla mappa; altrimenti lo si cerca dal testo. */
     var workPoint: Pair<Double, Double>?

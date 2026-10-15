@@ -102,6 +102,7 @@ class MainActivity : ComponentActivity() {
             }
             val health = rememberLauncherForActivityResult(PermissionController.createRequestPermissionResultContract()) { vm.refresh() }
             val contacts = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { vm.refresh() }
+            val precise = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { vm.refresh() }
             val basicPermissions = buildList {
                 add(Manifest.permission.ACCESS_COARSE_LOCATION)
                 add(Manifest.permission.READ_CALENDAR)
@@ -128,6 +129,8 @@ class MainActivity : ComponentActivity() {
                         runCatching { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null))) }
                     },
                     grantContacts = { contacts.launch(Manifest.permission.READ_CONTACTS) },
+                    grantPrecise = { precise.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)) },
+                    setWorkStart = vm::setWorkStart,
                     openLink = { url -> runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } },
                 )
             }

@@ -64,6 +64,15 @@ object Summary {
             }
         }
 
+        s.commute?.takeIf { s.shows(CardKeys.TRAVEL) }?.let { c ->
+            val day = if (c.day == s.now.toLocalDate()) "Oggi" else "Domani"
+            val ride = c.rides.firstOrNull { it.leaveBy != null }
+            when {
+                c.off -> Unit
+                c.needsAnswer -> parts += "Dimmi a che ora entri al lavoro ${day.lowercase()} per sapere quando uscire."
+                ride != null -> parts += "$day per il lavoro esci entro le ${ride.leaveBy!!.format(hm)} (${TravelRepo.MODES[ride.mode]?.lowercase() ?: ride.mode}, ${durationText(ride.minutes)})."
+            }
+        }
         s.travel.firstOrNull { it.leaveBy != null }?.let { t ->
             if (t.leaveBy!!.isAfter(s.now)) parts += "Per «${t.label}» parti entro le ${t.leaveBy.format(hm)} (${TravelRepo.MODES[t.mode]?.lowercase() ?: t.mode})."
         }
@@ -123,6 +132,15 @@ object Summary {
                 }.ifEmpty { "nessuno" }
                 appendLine("Impegni di oggi: " + events(s.today))
                 appendLine("Impegni di domani: " + events(s.tomorrow))
+            }
+            if (s.shows(CardKeys.TRAVEL)) s.commute?.let { c ->
+                val day = if (c.day == s.now.toLocalDate()) "oggi" else "domani"
+                when {
+                    c.off -> appendLine("Lavoro: $day non lavora")
+                    c.start != null -> appendLine("Lavoro $day: entra alle ${c.start}" + c.rides.joinToString("") { r ->
+                        "; ${TravelRepo.MODES[r.mode]?.lowercase() ?: r.mode} ${r.minutes} min, uscire entro ${r.leaveBy?.format(hm)}" + (r.detail?.let { d -> " ($d)" } ?: "")
+                    })
+                }
             }
             if (s.shows(CardKeys.TRAVEL)) s.travel.forEach {
                 appendLine("Spostamento verso ${it.label} (${TravelRepo.MODES[it.mode]?.lowercase() ?: it.mode}): ${it.minutes} min" + (it.detail?.let { d -> ", $d" } ?: "") + (it.leaveBy?.let { l -> ", partire entro ${l.format(hm)}" } ?: ""))

@@ -1,6 +1,10 @@
 package com.brieffo.app
 
 import android.app.Application
+import java.time.LocalDate
+import androidx.core.content.ContextCompat
+import android.content.pm.PackageManager
+import android.Manifest
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.brieffo.app.data.AlertsRepo
@@ -119,10 +123,18 @@ class BriefViewModel(app: Application) : AndroidViewModel(app) {
                     }
                 }
                 launch(Dispatchers.IO) {
-                    val t = if (on(CardKeys.TRAVEL)) runCatching { WeatherRepo.travelOrigin(app, prefs)?.let { TravelRepo.load(prefs, it, events.await().first) } }.getOrNull() else null
-                    _state.update { it.copy(travel = t ?: emptyList()) }
-                    // Con i tragitti aggiornati si (ri)programma l'avviso "è ora di partire".
-                    if (t != null) runCatching { LeaveReminder.plan(app, t) }
+                    // Tutti i tragitti partono da dove si trova il telefono adesso.
+                    val origin = if (on(CardKeys.TRAVEL)) runCatching { WeatherRepo.travelOrigin(app, prefs) }.getOrNull() else null
+                    val commute = if (on(CardKeys.TRAVEL)) runCatching { TravelRepo.commute(prefs, origin, now) }.getOrNull() else null
+                    val t = if (origin != null) runCatching { TravelRepo.load(prefs, origin, events.await().first, skipWork = commute != null) }.getOrNull() else null
+                    _state.update {
+                        it.copy(
+                            travel = t ?: emptyList(), commute = commute, travelFrom = origin?.name ?: "",
+                            preciseLocation = ContextCompat.checkSelfPermission(app, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED,
+                        )
+                    }
+                    // Con i tragitti aggiornati si (ri)programma l'avviso "è ora di partire", lavoro compreso.
+                    if (on(CardKeys.TRAVEL)) runCatching { LeaveReminder.plan(app, (t ?: emptyList()) + (commute?.rides ?: emptyList())) }
                 }
                 launch(Dispatchers.IO) {
                     // La sera si calcola anche quando uscire per il primo impegno di domani.
@@ -194,6 +206,12 @@ class BriefViewModel(app: Application) : AndroidViewModel(app) {
             val shown = _state.value
             withContext(Dispatchers.IO) { runCatching { WidgetStore.update(app, shown) } }
         }
+    }
+
+    /** Risposta alla domanda "a che ora entri al lavoro?" ([value] "HH:mm", "off", o null per cancellarla); poi si ricalcola. */
+    fun setWorkStart(day: LocalDate, value: String?) {
+        prefs.setWorkStart(day, value)
+        refresh()
     }
 
     private companion object {

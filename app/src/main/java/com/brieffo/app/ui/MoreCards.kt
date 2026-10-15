@@ -64,6 +64,18 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.brieffo.app.data.BriefState
+import androidx.compose.material.icons.rounded.MyLocation
+import androidx.compose.material.icons.rounded.Work
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TimePicker
+import androidx.compose.material3.rememberTimePickerState
+import androidx.compose.foundation.clickable
+import com.brieffo.app.data.Commute
+import com.brieffo.app.data.Travel
 import com.brieffo.app.data.CardKeys
 import com.brieffo.app.data.wxText
 import com.brieffo.app.data.Match
@@ -112,48 +124,128 @@ fun AlertBanner(alerts: List<WxAlert>) {
     }
 }
 
+/** Una riga di tragitto: icona del mezzo, dettaglio, ora entro cui uscire e durata. */
 @Composable
-fun TravelCard(s: BriefState, onSetup: () -> Unit) {
+private fun RideRow(t: Travel) {
+    val p = LocalPalette.current
+    Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            when (t.mode) {
+                "transit" -> Icons.Rounded.DirectionsBus
+                "bike" -> Icons.AutoMirrored.Rounded.DirectionsBike
+                "foot" -> Icons.AutoMirrored.Rounded.DirectionsWalk
+                else -> Icons.Rounded.DirectionsCar
+            },
+            null, Modifier.size(22.dp), tint = p.accent,
+        )
+        Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+            Text(
+                (TravelRepo.MODES[t.mode] ?: t.mode) + (t.leaveBy?.let { " · esci entro le ${it.format(hm)}" } ?: ""),
+                fontSize = 14.sp, fontWeight = FontWeight.Medium, color = if (t.leaveBy != null) p.accent else p.text,
+            )
+            Text(t.detail ?: String.format(Locale.ITALY, "%.1f km", t.km), fontSize = 12.sp, lineHeight = 16.sp, color = p.sub)
+        }
+        Text(durationText(t.minutes), fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+/**
+ * Il lavoro di oggi o di domani: se l'app non sa ancora a che ora si entra, lo chiede (si risponde con un tocco,
+ * l'orario proposto è l'ultimo usato); poi mostra per ogni mezzo scelto quanto ci si mette e quando uscire.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CommuteBlock(c: Commute, today: LocalDate, lastStart: String, onAnswer: (LocalDate, String?) -> Unit) {
+    val p = LocalPalette.current
+    val day = if (c.day == today) "oggi" else "domani"
+    var picking by remember { mutableStateOf(false) }
+    val proposed = remember(c.day, c.start) { (c.start?.toString() ?: lastStart).split(':').mapNotNull { it.toIntOrNull() } }
+    val time = rememberTimePickerState(proposed.getOrElse(0) { 9 }, proposed.getOrElse(1) { 0 }, is24Hour = true)
+    val chosen = "%02d:%02d".format(time.hour, time.minute)
+
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text("Lavoro", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+        if (!c.needsAnswer) Text(
+            if (c.off) "$day non lavori" else "$day entri alle ${c.start!!.format(hm)}",
+            fontSize = 13.sp, color = p.sub,
+        )
+    }
+    when {
+        c.needsAnswer -> {
+            Text("A che ora entri al lavoro $day? Calcolo io quando uscire, da dove ti trovi, con i mezzi che hai scelto.", fontSize = 13.sp, lineHeight = 18.sp, color = p.sub, modifier = Modifier.padding(top = 4.dp))
+            Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { picking = true }) { Text(chosen, color = p.accent, fontSize = 16.sp, fontWeight = FontWeight.SemiBold) }
+                Button(
+                    onClick = { onAnswer(c.day, chosen) },
+                    colors = ButtonDefaults.buttonColors(containerColor = p.accent, contentColor = p.onAccent),
+                ) { Text("Conferma") }
+                TextButton(onClick = { onAnswer(c.day, "off") }) { Text("Non lavoro", color = p.sub) }
+            }
+        }
+        c.off -> Unit
+        c.there -> Text("Sei già al lavoro.", fontSize = 13.sp, color = p.sub, modifier = Modifier.padding(top = 4.dp))
+        else -> {
+            c.rides.forEach { RideRow(it) }
+            if (c.failed.isNotEmpty()) Text(
+                "Non riesco a calcolare: " + c.failed.joinToString { (TravelRepo.MODES[it] ?: it).lowercase() } +
+                    if ("transit" in c.failed) ". Per i mezzi pubblici può non esserci una corsa adatta a quell'orario." else ".",
+                fontSize = 12.sp, lineHeight = 16.sp, color = p.sub, modifier = Modifier.padding(top = 8.dp),
+            )
+        }
+    }
+    if (!c.needsAnswer) Text(
+        "Cambia orario", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = p.accent,
+        modifier = Modifier.padding(top = 8.dp).clip(RoundedCornerShape(8.dp)).clickable { onAnswer(c.day, null) }.padding(vertical = 4.dp),
+    )
+    if (picking) AlertDialog(
+        onDismissRequest = { picking = false },
+        confirmButton = { TextButton(onClick = { picking = false }) { Text("Fatto", color = p.accent) } },
+        title = { Text("Entri al lavoro alle") },
+        text = { TimePicker(time) },
+    )
+}
+
+@Composable
+fun TravelCard(s: BriefState, onSetup: () -> Unit, onGrantPrecise: () -> Unit, onWorkStart: (LocalDate, String?) -> Unit) {
     val p = LocalPalette.current
     BriefCard(title = "Spostamenti", icon = Icons.Rounded.Commute) {
-        if (s.travel.isEmpty()) {
-            if (s.travelConfigured) Hint("Nessun tragitto da mostrare: sei già a destinazione, oppure non riesco a calcolare il percorso (controlla l'indirizzo nelle impostazioni e che la posizione sia attiva).")
-            else {
-                Hint("Aggiungi il lavoro o un'altra destinazione nelle impostazioni per vedere quanto ci metti. Per gli impegni in agenda con un luogo il tempo si calcola da solo.")
-                ActionButton("Imposta", onSetup)
-            }
+        if (!s.travelConfigured) {
+            Hint("Imposta casa e lavoro nelle impostazioni: ti dico quanto ci metti, con i mezzi che preferisci. Per gli impegni in agenda con un luogo il tempo si calcola da solo.")
+            ActionButton("Imposta", onSetup)
             return@BriefCard
         }
-        // Una destinazione alla volta, con sotto una riga per ogni mezzo scelto.
-        s.travel.groupBy { it.label }.entries.forEachIndexed { i, (label, rides) ->
-            if (i > 0) HorizontalDivider(Modifier.padding(vertical = 12.dp), color = p.text.copy(alpha = 0.08f))
-            Text(label, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            rides.forEach { t ->
-                Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        when (t.mode) {
-                            "transit" -> Icons.Rounded.DirectionsBus
-                            "bike" -> Icons.AutoMirrored.Rounded.DirectionsBike
-                            "foot" -> Icons.AutoMirrored.Rounded.DirectionsWalk
-                            else -> Icons.Rounded.DirectionsCar
-                        },
-                        null, Modifier.size(22.dp), tint = p.accent,
-                    )
-                    Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                        Text(TravelRepo.MODES[t.mode] ?: t.mode, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                        Text(
-                            listOfNotNull(
-                                t.detail ?: String.format(Locale.ITALY, "%.1f km", t.km),
-                                t.leaveBy?.let { "parti entro le ${it.format(hm)}" },
-                            ).joinToString(" · "),
-                            fontSize = 12.sp, lineHeight = 16.sp, color = if (t.leaveBy != null) p.accent else p.sub,
-                        )
-                    }
-                    Text(durationText(t.minutes), fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-                }
+        // Senza la posizione precisa il punto di partenza può sbagliare di uno o due chilometri: lo si dice e si chiede.
+        if (!s.preciseLocation) {
+            Row(
+                Modifier.fillMaxWidth().padding(bottom = 12.dp).background(p.accent.copy(alpha = 0.12f), RoundedCornerShape(16.dp)).padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Rounded.MyLocation, null, Modifier.size(22.dp), tint = p.accent)
+                Text(
+                    "Per calcolare il tragitto da dove ti trovi davvero mi serve la posizione precisa.",
+                    fontSize = 13.sp, lineHeight = 18.sp, modifier = Modifier.weight(1f).padding(horizontal = 10.dp),
+                )
+                TextButton(onClick = onGrantPrecise) { Text("Consenti", color = p.accent, fontWeight = FontWeight.SemiBold) }
             }
         }
-        Text("Auto, bici e piedi: stima senza traffico. Mezzi pubblici: orari ufficiali, con l'attesa alla fermata.", fontSize = 11.sp, color = p.sub.copy(alpha = 0.8f), modifier = Modifier.padding(top = 12.dp))
+        val c = s.commute
+        if (c != null) CommuteBlock(c, s.now.toLocalDate(), Prefs(LocalContext.current).lastWorkStart, onWorkStart)
+        // Le altre destinazioni (e il prossimo impegno con un luogo): una alla volta, con una riga per mezzo.
+        s.travel.groupBy { it.label }.entries.forEachIndexed { i, (label, rides) ->
+            if (i > 0 || c != null) HorizontalDivider(Modifier.padding(vertical = 12.dp), color = p.text.copy(alpha = 0.08f))
+            Text(label, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            rides.forEach { RideRow(it) }
+        }
+        if (c == null && s.travel.isEmpty()) Hint(
+            if (s.loading) "Calcolo i tragitti…" else "Nessun tragitto da mostrare adesso: sei già a destinazione, oppure non riesco a calcolare il percorso. Il tragitto per il lavoro compare la sera per il giorno dopo e la mattina fino all'orario d'ingresso."
+        )
+        Text(
+            listOfNotNull(
+                s.travelFrom.takeIf { it.isNotBlank() }?.let { "Partenza $it." },
+                "Auto, bici e piedi: stima senza traffico. Mezzi pubblici: orari ufficiali, con l'attesa alla fermata.",
+            ).joinToString(" "),
+            fontSize = 11.sp, lineHeight = 15.sp, color = p.sub.copy(alpha = 0.8f), modifier = Modifier.padding(top = 12.dp),
+        )
     }
 }
 
@@ -438,13 +530,25 @@ fun TomorrowCard(s: BriefState) {
             if (first != null) OccasionRow(Icons.Rounded.Event, first.title, "Primo impegno alle ${first.start.format(hm)}" + if (first.location.isNotBlank()) " · ${first.location}" else "")
             else OccasionRow(Icons.Rounded.Event, if (s.tomorrow.isEmpty()) "Agenda libera" else s.tomorrow.first().title, if (s.tomorrow.isEmpty()) "Nessun impegno in programma" else "Tutto il giorno")
         }
+        val work = s.commute?.takeIf { it.day == s.now.toLocalDate().plusDays(1) && s.shows(CardKeys.TRAVEL) }
+        val workRide = work?.rides?.firstOrNull { it.leaveBy != null }
+        when {
+            work == null -> Unit
+            work.needsAnswer -> OccasionRow(Icons.Rounded.Work, "A che ora entri al lavoro?", "Rispondi nella scheda Spostamenti: calcolo io quando uscire")
+            work.off -> OccasionRow(Icons.Rounded.Work, "Domani non lavori", "Niente sveglia per il lavoro")
+            workRide != null -> OccasionRow(
+                Icons.Rounded.Work, "Lavoro alle ${work.start!!.format(hm)}: esci entro le ${workRide.leaveBy!!.format(hm)}",
+                "${TravelRepo.MODES[workRide.mode] ?: workRide.mode} · ${durationText(workRide.minutes)}" + (workRide.detail?.let { " · $it" } ?: ""),
+            )
+        }
         val ride = s.tomorrowTravel.firstOrNull { it.leaveBy != null }
         if (ride != null) OccasionRow(
             Icons.Rounded.Commute, "Esci entro le ${ride.leaveBy!!.format(hm)}",
             "${TravelRepo.MODES[ride.mode] ?: ride.mode} · ${durationText(ride.minutes)}" + (ride.detail?.let { " · $it" } ?: ""),
         )
         // Un'ora per prepararsi prima di uscire; senza un tragitto, mezz'ora di margine sull'impegno.
-        val wake = (ride?.leaveBy ?: first?.start?.minusMinutes(30))?.minusMinutes(60)
+        // La prima uscita della giornata, tra lavoro e primo impegno, decide la sveglia.
+        val wake = listOfNotNull(workRide?.leaveBy, ride?.leaveBy ?: first?.start?.minusMinutes(30)).minOrNull()?.minusMinutes(60)
         val alarm = s.nextAlarm?.takeIf { it.toLocalDate() <= s.now.toLocalDate().plusDays(1) }
         when {
             wake != null -> OccasionRow(

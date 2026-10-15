@@ -307,7 +307,7 @@ fun OnboardingScreen(prefs: Prefs, onGrantBasics: () -> Unit, onConnectHealth: (
                         if (CardKeys.SPORT !in hidden && CardKeys.TRAVEL !in hidden) Spacer(Modifier.height(12.dp))
                         if (CardKeys.TRAVEL !in hidden) Panel {
                             Text("Dove lavori o studi", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                            TravelSetup(places, modes, "Via, numero e città: ti dirò quanto ci metti ad arrivare", { places = it }) { modes = it }
+                            TravelSetup(places, modes, { places = it }) { modes = it }
                         }
                         if (CardKeys.SPORT in hidden && CardKeys.TRAVEL in hidden) Panel {
                             Text("Hai spento sia la squadra sia gli spostamenti: qui non c'è nulla da impostare.", fontSize = 14.sp, color = p.sub)

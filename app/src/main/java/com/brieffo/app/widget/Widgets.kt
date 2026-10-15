@@ -386,8 +386,11 @@ class WidgetWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx
         val state = base.copy(sport = sport)
         if (sport != null) runCatching { LiveMatch.update(ctx, sport) }
         // Anche senza aprire l'app l'avviso di partenza resta aggiornato sul prossimo impegno.
-        if (base.shows(CardKeys.TRAVEL) && prefs.leaveAlerts && base.today.any { it.location.isNotBlank() }) runCatching {
-            WeatherRepo.travelOrigin(ctx, prefs)?.let { LeaveReminder.plan(ctx, TravelRepo.load(prefs, it, base.today)) }
+        if (base.shows(CardKeys.TRAVEL) && prefs.leaveAlerts) runCatching {
+            val origin = WeatherRepo.travelOrigin(ctx, prefs)
+            val commute = TravelRepo.commute(prefs, origin)
+            val events = if (origin != null && base.today.any { it.location.isNotBlank() }) TravelRepo.load(prefs, origin, base.today, skipWork = true) else emptyList()
+            LeaveReminder.plan(ctx, events.filter { it.leaveBy != null } + (commute?.rides ?: emptyList()))
         }
         // Il riepilogo di Gemini resta quello dell'ultima apertura finché è recente: qui non si chiama l'IA.
         val ai = prefs.aiSummary.takeIf { prefs.geminiKey.isNotBlank() && it.isNotBlank() && System.currentTimeMillis() - prefs.aiSummaryAt < 4 * 60 * 60 * 1000L }

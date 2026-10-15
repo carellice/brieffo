@@ -62,6 +62,7 @@ import com.brieffo.app.data.CardKeys
 import com.brieffo.app.data.Daypart
 import com.brieffo.app.data.NewsRepo
 import com.brieffo.app.data.Prefs
+import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -74,6 +75,10 @@ class BriefActions(
     val openAppInfo: () -> Unit,
     val openLink: (String) -> Unit,
     val grantContacts: () -> Unit,
+    /** Chiede la posizione precisa, per far partire i tragitti dal punto esatto. */
+    val grantPrecise: () -> Unit,
+    /** Salva l'orario d'ingresso al lavoro di un giorno ("HH:mm", "off" se non si lavora, null per cancellarlo). */
+    val setWorkStart: (LocalDate, String?) -> Unit,
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -115,7 +120,7 @@ fun BriefScreen(s: BriefState, actions: BriefActions, scroll: ScrollState = reme
                     )
                 },
                 CardKeys.AGENDA to { AgendaCard(s, actions.grantBasics) },
-                CardKeys.TRAVEL to { TravelCard(s, actions.openSettings) },
+                CardKeys.TRAVEL to { TravelCard(s, actions.openSettings, actions.grantPrecise, actions.setWorkStart) },
                 CardKeys.HEALTH to { HealthCard(s, actions.connectHealth) },
                 CardKeys.USAGE to { UsageCard(s, actions.grantUsage, actions.openAppInfo) },
                 CardKeys.NEWS to { NewsCard(s.news, s.loading, s.newsConfigured, actions.openSettings, actions.openLink) },

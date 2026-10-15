@@ -69,7 +69,8 @@ della giornata oppure, se preferisci, lo decidi tu dalle impostazioni.
 - **Notifica giornaliera** con il riepilogo, all'ora che decidi. Nelle impostazioni vedi quali notifiche sono attive, quando arriva la prossima, e puoi mandartene una di prova.
 - **Partita in diretta**: dal fischio d'inizio il punteggio viene ricontrollato ogni paio di minuti, con un avviso a ogni gol e a fine partita.
 - **Ora di partire**: un avviso dieci minuti prima dell'ora entro cui uscire per un impegno che ha un luogo.
-- **Più destinazioni**: oltre al lavoro puoi salvare casa, palestra e altre; il brief mostra i tempi verso tutte, tranne quella in cui ti trovi.
+- **Casa, lavoro, scuola e palestra**: destinazioni scelte sulla mappa; il brief mostra i tempi verso tutte, tranne quella in cui ti trovi.
+- **Tragitto per il lavoro**: la sera (e la mattina prima di entrare) Brieffo ti chiede a che ora entri e ti dice, per ogni mezzo scelto, quanto ci metti e quando uscire, partendo da dove sei.
 - **Promemoria della partita**: un tocco sulla prossima gara e ricevi una notifica 30 minuti prima dell'inizio.
 - **Riepilogo da ascoltare**: un tocco su *Ascolta* e te lo legge una voce che gira tutta sul telefono, gratuita e senza limiti (si scarica una volta, circa 64 MB). In alternativa una voce di Gemini o quella di Android; velocità e voce a scelta.
 - **Aggiornamento misurato**: il brief si ricarica da solo ogni quattro ore; quando vuoi dati freschi, trascina verso il basso.

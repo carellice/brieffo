@@ -71,8 +71,14 @@ object WeatherRepo {
      * Con la posizione precisa concessa è il punto esatto; altrimenti quello approssimato che dà Android,
      * e in mancanza anche di quello la città del meteo.
      */
-    suspend fun travelOrigin(ctx: Context, prefs: Prefs): Place? =
-        deviceLocation(ctx, maxAge = 10 * 60_000L)?.let { Place(it.latitude, it.longitude, "Posizione attuale") } ?: resolvePlace(ctx, prefs)
+    suspend fun travelOrigin(ctx: Context, prefs: Prefs): Place? {
+        val precise = ContextCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        // Con la posizione precisa si chiede un punto fresco: il tragitto deve partire da dove si è davvero adesso.
+        deviceLocation(ctx, maxAge = if (precise) 2 * 60_000L else 10 * 60_000L)?.let {
+            return Place(it.latitude, it.longitude, if (precise) "dalla tua posizione precisa" else "dalla tua posizione approssimata")
+        }
+        return resolvePlace(ctx, prefs)?.let { it.copy(name = "dal centro di ${it.name}, perché la posizione del telefono non è disponibile") }
+    }
 
     private fun geocode(city: String): Place? {
         val q = URLEncoder.encode(city, "UTF-8")

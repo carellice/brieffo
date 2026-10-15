@@ -32,6 +32,11 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Map
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material.icons.rounded.FitnessCenter
+import androidx.compose.material.icons.rounded.School
+import androidx.compose.material.icons.rounded.Work
+import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.MyLocation
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -97,7 +102,6 @@ import org.osmdroid.views.overlay.Marker
 internal fun TravelSetup(
     places: List<SavedPlace>,
     modes: List<String>,
-    hint: String,
     onPlaces: (List<SavedPlace>) -> Unit,
     onModes: (List<String>) -> Unit,
 ) {
@@ -113,36 +117,34 @@ internal fun TravelSetup(
     val precise = remember(check) { ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED }
     val askPrecise = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { check++ }
 
-    // Si parte sempre con almeno una riga da compilare: la prima è il lavoro.
-    val rows = places.ifEmpty { listOf(SavedPlace("Lavoro", "")) }
-    fun change(i: Int, place: SavedPlace) = onPlaces(rows.mapIndexed { j, old -> if (j == i) place else old })
-    rows.forEachIndexed { i, place ->
-        if (i > 0) Spacer(Modifier.height(14.dp))
+    // Solo destinazioni preimpostate, ciascuna con l'indirizzo scelto sulla mappa: niente nomi o indirizzi scritti a mano,
+    // così ogni tragitto parte da coordinate sicure.
+    TravelRepo.PRESETS.forEachIndexed { i, name ->
+        val place = places.firstOrNull { it.name == name }
+        if (i > 0) HorizontalDivider(Modifier.padding(vertical = 8.dp), color = p.text.copy(alpha = 0.08f))
         Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(
-                place.name, { change(i, place.copy(name = it)) }, label = { Text("Nome") }, singleLine = true,
-                shape = RoundedCornerShape(16.dp), modifier = Modifier.weight(1f),
+            Icon(
+                when (name) { "Casa" -> Icons.Rounded.Home; "Lavoro" -> Icons.Rounded.Work; "Scuola" -> Icons.Rounded.School; else -> Icons.Rounded.FitnessCenter },
+                null, Modifier.size(22.dp), tint = if (place != null) p.accent else p.sub,
             )
-            if (rows.size > 1 || place.address.isNotBlank()) IconButton(onClick = { onPlaces(rows - place) }) {
-                Icon(Icons.Rounded.DeleteOutline, "Elimina ${place.name}", tint = p.sub)
+            Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                Text(name, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                Text(
+                    when {
+                        place == null -> "Non impostato"
+                        place.lat == null -> "${place.address} · da confermare sulla mappa"
+                        else -> place.address
+                    },
+                    fontSize = 12.sp, lineHeight = 16.sp, color = if (place?.lat == null && place != null) p.accent else p.sub,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis,
+                )
             }
-        }
-        Spacer(Modifier.height(6.dp))
-        // Scrivendo a mano le coordinate di prima non valgono più: l'indirizzo verrà cercato al momento del calcolo.
-        Field(place.address, { change(i, place.copy(address = it, lat = null, lon = null)) }, "Indirizzo", hint = if (i == 0) hint else null)
-        OutlinedButton(onClick = { picking = i }, modifier = Modifier.fillMaxWidth()) {
-            Icon(Icons.Rounded.Map, null, Modifier.size(18.dp), tint = p.accent)
-            Text(if (place.lat == null) "Cerca sulla mappa" else "Confermato sulla mappa · cambia", color = p.accent, modifier = Modifier.padding(start = 8.dp))
+            if (place != null) IconButton(onClick = { onPlaces(places - place) }) { Icon(Icons.Rounded.DeleteOutline, "Togli $name", tint = p.sub) }
+            OutlinedButton(onClick = { picking = i }) { Text(if (place == null) "Imposta" else "Cambia", color = p.accent) }
         }
     }
-    if (rows.all { it.address.isNotBlank() } && rows.size < 6) OutlinedButton(
-        onClick = { onPlaces(rows + SavedPlace(listOf("Casa", "Palestra", "Università", "Altro").firstOrNull { n -> rows.none { it.name == n } } ?: "Altro", "")) },
-        modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
-    ) {
-        Icon(Icons.Rounded.Add, null, Modifier.size(18.dp), tint = p.accent)
-        Text("Aggiungi una destinazione", color = p.accent, modifier = Modifier.padding(start = 8.dp))
-    }
-    if (rows.size > 1) Note("Nel brief compaiono tutte, tranne quella in cui ti trovi già.")
+    Spacer(Modifier.height(6.dp))
+    Note("Per il lavoro, la sera (e la mattina prima di entrare) il brief ti chiede a che ora entri e calcola da solo quando uscire. Le destinazioni in cui ti trovi già non compaiono.")
 
     Spacer(Modifier.height(10.dp))
     Note("Con quali mezzi (anche più di uno)")
@@ -156,7 +158,7 @@ internal fun TravelSetup(
             )
         }
     }
-    if ("transit" in modes) Note("I mezzi pubblici vengono cercati con gli orari di adesso: il tempo comprende l'attesa alla fermata e i tratti a piedi.")
+    if ("transit" in modes) Note("I mezzi pubblici usano gli orari reali delle corse: il tempo comprende l'attesa alla fermata e i tratti a piedi.")
 
     Spacer(Modifier.height(10.dp))
     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -173,13 +175,14 @@ internal fun TravelSetup(
         }
     }
 
-    rows.getOrNull(picking)?.let { place ->
+    TravelRepo.PRESETS.getOrNull(picking)?.let { name ->
+        val place = places.firstOrNull { it.name == name }
         AddressPicker(
-            initial = if (place.lat != null && place.lon != null) Address(place.address, place.lat, place.lon) else null,
-            query = place.address,
+            initial = if (place?.lat != null && place.lon != null) Address(place.address, place.lat, place.lon) else null,
+            query = place?.address ?: "",
             onDismiss = { picking = -1 },
             onPick = { a ->
-                change(picking, place.copy(address = a.label, lat = a.lat, lon = a.lon))
+                onPlaces(places.filter { it.name != name } + SavedPlace(name, a.label, a.lat, a.lon))
                 picking = -1
             },
         )
