@@ -132,7 +132,10 @@ data class WxAlert(val type: String, val level: Int, val until: LocalDateTime?, 
 data class Travel(val label: String, val minutes: Long, val km: Double, val leaveBy: LocalDateTime? = null, val mode: String = "car", val detail: String? = null)
 
 /** Destinazione salvata dall'utente (lavoro, casa, palestra…); senza coordinate l'indirizzo viene cercato dal testo. */
-data class SavedPlace(val name: String, val address: String, val lat: Double? = null, val lon: Double? = null)
+data class SavedPlace(val name: String, val address: String, val lat: Double? = null, val lon: Double? = null, val icon: String = "") {
+    /** Vero per i luoghi aggiunti dall'utente, oltre a casa, lavoro, scuola e palestra. */
+    val custom get() = name !in TravelRepo.PRESETS
+}
 
 /**
  * Il tragitto verso il lavoro di oggi o di domani, calcolato per arrivare all'orario d'ingresso detto dall'utente.
@@ -209,7 +212,7 @@ object CardKeys {
     const val TOMORROW = "tomorrow"
 
     /** Schede che si possono riordinare, nell'ordine proposto a chi inizia a sistemarle a mano. */
-    val sortable = listOf(TOMORROW, WEATHER, AGENDA, TRAVEL, HEALTH, USAGE, NEWS, SPORT, MARKETS, OCCASIONS, EXTRAS)
+    val sortable = listOf(TOMORROW, WEATHER, TRAVEL, AGENDA, HEALTH, NEWS, SPORT, OCCASIONS, MARKETS, EXTRAS, USAGE)
 
     /** Ordine completo a partire da quello salvato: via le chiavi sconosciute, in coda le schede che mancano. */
     fun ordered(saved: List<String>) = saved.filter { it in sortable }.distinct().let { known ->
@@ -270,6 +273,8 @@ data class BriefState(
     val tomorrowTravel: List<Travel> = emptyList(),
     /** Tragitto verso il lavoro per oggi o domani, o null se adesso non serve (o il lavoro non è impostato). */
     val commute: Commute? = null,
+    /** Icona di ogni destinazione salvata, per nome: serve alla scheda Spostamenti. */
+    val placeIcons: Map<String, String> = emptyMap(),
     /** Da dove partono i tragitti: la posizione precisa, quella approssimata o la città impostata. */
     val travelFrom: String = "",
     /** Vero se l'app può usare la posizione precisa. */

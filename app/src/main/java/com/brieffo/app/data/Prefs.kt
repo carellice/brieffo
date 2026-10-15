@@ -239,15 +239,16 @@ class Prefs(ctx: Context) {
             return runCatching {
                 val a = JSONArray(saved)
                 (0 until a.length()).map { a.getJSONObject(it) }.map { o ->
-                    SavedPlace(o.optString("name"), o.optString("address"), o.optDouble("lat").takeIf { !it.isNaN() }, o.optDouble("lon").takeIf { !it.isNaN() })
-                }
-                    // Le destinazioni sono solo quelle previste (casa, lavoro…): le altre delle versioni precedenti si lasciano cadere.
-                    .filter { it.name in TravelRepo.PRESETS }.distinctBy { it.name }
+                    SavedPlace(
+                        o.optString("name"), o.optString("address"), o.optDouble("lat").takeIf { !it.isNaN() }, o.optDouble("lon").takeIf { !it.isNaN() },
+                        o.optString("icon"),
+                    )
+                }.filter { it.name.isNotBlank() }.distinctBy { it.name }
             }.getOrDefault(emptyList())
         }
         set(v) = sp.edit {
             val kept = v.filter { it.address.isNotBlank() }
-            putString("places", JSONArray(kept.map { JSONObject().put("name", it.name.trim()).put("address", it.address.trim()).put("lat", it.lat).put("lon", it.lon) }).toString())
+            putString("places", JSONArray(kept.map { JSONObject().put("name", it.name.trim()).put("address", it.address.trim()).put("lat", it.lat).put("lon", it.lon).put("icon", it.icon) }).toString())
         }
 
     /** Orari d'ingresso al lavoro detti dall'utente, giorno per giorno: "HH:mm", oppure "off" se quel giorno non lavora. */

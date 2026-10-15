@@ -131,13 +131,8 @@ fun BriefScreen(s: BriefState, actions: BriefActions, scroll: ScrollState = reme
                 CardKeys.TOMORROW to { TomorrowCard(s) },
             )
             // Senza un ordine scelto a mano si segue il momento della giornata: al mattino si guarda avanti, la sera si tira il bilancio.
-            val order = if (s.cardOrder.isNotEmpty()) CardKeys.ordered(s.cardOrder) else with(CardKeys) {
-                when (s.daypart) {
-                    Daypart.MORNING -> listOf(WEATHER, TRAVEL, AGENDA, HEALTH, NEWS, SPORT, OCCASIONS, MARKETS, EXTRAS, USAGE)
-                    Daypart.MIDDAY -> listOf(AGENDA, TRAVEL, WEATHER, HEALTH, NEWS, SPORT, MARKETS, USAGE, OCCASIONS, EXTRAS)
-                    Daypart.EVENING, Daypart.NIGHT -> listOf(TOMORROW, HEALTH, USAGE, AGENDA, WEATHER, SPORT, NEWS, MARKETS, OCCASIONS, EXTRAS)
-                }
-            }
+            // L'ordine è quello scelto nelle impostazioni; chi non l'ha mai toccato ha quello proposto dall'app.
+            val order = CardKeys.ordered(s.cardOrder)
             val evening = s.daypart == Daypart.EVENING || s.daypart == Daypart.NIGHT
             val keys = listOf(SUMMARY_SECTION) + order.filter { s.shows(it) && (it != CardKeys.TOMORROW || evening) }
             SideEffect { if (shown != keys) shown = keys }

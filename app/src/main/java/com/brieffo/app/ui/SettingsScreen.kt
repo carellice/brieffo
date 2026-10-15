@@ -580,33 +580,27 @@ fun SettingsScreen(
             Note("Il riepilogo in cima resta sempre visibile. Le schede spente non scaricano dati.")
         }
 
-        SettingsSection("Ordine delle schede", Icons.Rounded.SwapVert, if (order.isEmpty()) "Automatico" else "Scelto da te", "Ordine delle schede" in openSections, { openSections = if ("Ordine delle schede" in openSections) openSections - "Ordine delle schede" else openSections + "Ordine delle schede" }) {
-            ToggleRow("Ordine automatico", order.isEmpty(), detail = "Cambia con il momento della giornata") { auto ->
-                order = if (auto) emptyList() else CardKeys.sortable
+        SettingsSection("Ordine delle schede", Icons.Rounded.SwapVert, CardKeys.ordered(order).filter { it !in hidden }.take(3).joinToString(", ") { CardKeys.labels[it]?.substringBefore(" (") ?: it } + "…", "Ordine delle schede" in openSections, { openSections = if ("Ordine delle schede" in openSections) openSections - "Ordine delle schede" else openSections + "Ordine delle schede" }) {
+            val full = CardKeys.ordered(order)
+            val shown = full.filter { it !in hidden }
+            // Le frecce scambiano la scheda con quella visibile più vicina, saltando quelle spente.
+            fun swap(a: String, b: String) {
+                order = full.map { if (it == a) b else if (it == b) a else it }
             }
-            if (order.isNotEmpty()) {
-                val full = CardKeys.ordered(order)
-                val shown = full.filter { it !in hidden }
-                // Le frecce scambiano la scheda con quella visibile più vicina, saltando quelle spente.
-                fun swap(a: String, b: String) {
-                    order = full.map { if (it == a) b else if (it == b) a else it }
-                }
-                Spacer(Modifier.height(4.dp))
-                shown.forEachIndexed { i, cardKey ->
-                    val label = CardKeys.labels[cardKey]?.substringBefore(" (") ?: cardKey
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text("${i + 1}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = p.sub, modifier = Modifier.width(26.dp))
-                        Text(label, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                        IconButton(onClick = { swap(cardKey, shown[i - 1]) }, enabled = i > 0) {
-                            Icon(Icons.Rounded.KeyboardArrowUp, "Sposta su $label", tint = if (i > 0) p.accent else p.sub.copy(alpha = 0.4f))
-                        }
-                        IconButton(onClick = { swap(cardKey, shown[i + 1]) }, enabled = i < shown.lastIndex) {
-                            Icon(Icons.Rounded.KeyboardArrowDown, "Sposta giù $label", tint = if (i < shown.lastIndex) p.accent else p.sub.copy(alpha = 0.4f))
-                        }
+            shown.forEachIndexed { i, cardKey ->
+                val label = CardKeys.labels[cardKey]?.substringBefore(" (") ?: cardKey
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("${i + 1}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = p.sub, modifier = Modifier.width(26.dp))
+                    Text(label, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    IconButton(onClick = { swap(cardKey, shown[i - 1]) }, enabled = i > 0) {
+                        Icon(Icons.Rounded.KeyboardArrowUp, "Sposta su $label", tint = if (i > 0) p.accent else p.sub.copy(alpha = 0.4f))
+                    }
+                    IconButton(onClick = { swap(cardKey, shown[i + 1]) }, enabled = i < shown.lastIndex) {
+                        Icon(Icons.Rounded.KeyboardArrowDown, "Sposta giù $label", tint = if (i < shown.lastIndex) p.accent else p.sub.copy(alpha = 0.4f))
                     }
                 }
-                Note("Il riepilogo resta sempre in cima. Le schede spente non compaiono in questo elenco.")
             }
+            Note("Il riepilogo resta sempre in cima. Le schede spente non compaiono in questo elenco; \"Domani\" si vede solo la sera.")
         }
 
         if (CardKeys.AGENDA !in hidden) SettingsSection("Calendari", Icons.Rounded.CalendarMonth, calendars.count { CalendarRepo.isSelected(it, calOn, calOff) }.let { n -> if (calendars.isEmpty()) "Accesso non concesso" else "$n accesi su ${calendars.size}" }, "Calendari" in openSections, { openSections = if ("Calendari" in openSections) openSections - "Calendari" else openSections + "Calendari" }) {

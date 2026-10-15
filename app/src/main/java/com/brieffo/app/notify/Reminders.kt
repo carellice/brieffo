@@ -21,6 +21,7 @@ import com.brieffo.app.R
 import com.brieffo.app.data.Prefs
 import com.brieffo.app.data.Sport
 import com.brieffo.app.data.SportRepo
+import com.brieffo.app.data.Summary
 import com.brieffo.app.data.Travel
 import com.brieffo.app.data.TravelRepo
 import com.brieffo.app.data.durationText
@@ -75,8 +76,8 @@ object LeaveReminder {
         val key = "${next.label}|$leaveBy"
         if (prefs.leaveDone == key) return
         prefs.leaveKey = key
-        prefs.leaveText = "Per «${next.label}» esci entro le ${leaveBy.format(hm)}: ${TravelRepo.MODES[next.mode]?.lowercase() ?: next.mode} ci metti ${durationText(next.minutes)}" +
-            (next.detail?.let { " ($it)" } ?: "") + "."
+        // Nel testo tutti i mezzi scelti per quella destinazione, non solo il primo.
+        prefs.leaveText = "Per «${next.label}»: " + Summary.byMode(travel.filter { it.label == next.label && it.leaveBy != null }) + "."
         prefs.leaveAt = leaveBy.minusMinutes(LEAD_MINUTES).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
         if (prefs.leaveAt <= System.currentTimeMillis()) show(ctx) else Alarms.set(ctx, Alarms.LEAVE, prefs.leaveAt)
     }

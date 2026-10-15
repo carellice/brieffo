@@ -27,7 +27,7 @@ che cambia con l'ora del giorno.
 
 Brieffo apre la giornata con poche righe che dicono quello che conta adesso: che tempo fa,
 cosa hai in agenda, quando devi partire. Sotto il riepilogo trovi le schede con i dettagli,
-nell'ordine più utile per quel momento.
+nell'ordine che hai scelto tu.
 
 - **Al mattino** guarda avanti: meteo, spostamenti, impegni.
 - **Nel pomeriggio** mette in cima quello che ti resta da fare.
@@ -63,13 +63,13 @@ della giornata oppure, se preferisci, lo decidi tu dalle impostazioni.
 - **Calendari a scelta**: accendi solo quelli che vuoi vedere, compresi quelli che Android non scarica da solo, e forza la sincronizzazione quando vuoi con *Sincronizza ora*.
 - **Indice laterale**: i puntini sul bordo (sinistro o destro, a scelta) mostrano a che punto sei; appoggia il dito e diventano una colonna di icone, tocca o scorri per saltare da una scheda all'altra.
 - **Riepilogo richiudibile**: quello scritto da Gemini si apre e si chiude con un tocco, e può partire già chiuso.
-- **Ordine delle schede**: automatico oppure sistemato a mano, una scheda alla volta.
+- **Ordine delle schede**: lo decidi tu dalle impostazioni, una scheda alla volta.
 - **Indirizzo sulla mappa**: l'indirizzo del lavoro si cerca con i suggerimenti e si conferma su una mappa di OpenStreetMap, gratuita e senza account.
 - **Ricerca della squadra** con campionato, per non confondere due squadre con lo stesso nome.
 - **Notifica giornaliera** con il riepilogo, all'ora che decidi. Nelle impostazioni vedi quali notifiche sono attive, quando arriva la prossima, e puoi mandartene una di prova.
 - **Partita in diretta**: dal fischio d'inizio il punteggio viene ricontrollato ogni paio di minuti, con un avviso a ogni gol e a fine partita.
 - **Ora di partire**: un avviso dieci minuti prima dell'ora entro cui uscire per un impegno che ha un luogo.
-- **Casa, lavoro, scuola e palestra**: destinazioni scelte sulla mappa; il brief mostra i tempi verso tutte, tranne quella in cui ti trovi.
+- **Casa, lavoro, scuola, palestra e luoghi tuoi**: oltre alle quattro fisse puoi aggiungere luoghi con nome e icona a scelta, tutti con l'indirizzo confermato sulla mappa; il brief mostra i tempi verso tutti, tranne quello in cui ti trovi, con ogni mezzo che hai scelto (anche nel riepilogo).
 - **Tragitto per il lavoro**: la sera (e la mattina prima di entrare) Brieffo ti chiede a che ora entri e ti dice, per ogni mezzo scelto, quanto ci metti e quando uscire, partendo da dove sei.
 - **Promemoria della partita**: un tocco sulla prossima gara e ricevi una notifica 30 minuti prima dell'inizio.
 - **Riepilogo da ascoltare**: un tocco su *Ascolta* e te lo legge una voce che gira tutta sul telefono, gratuita e senza limiti (si scarica una volta, circa 64 MB). In alternativa una voce di Gemini o quella di Android; velocità e voce a scelta.

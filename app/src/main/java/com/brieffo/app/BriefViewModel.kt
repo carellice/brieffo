@@ -129,7 +129,7 @@ class BriefViewModel(app: Application) : AndroidViewModel(app) {
                     val t = if (origin != null) runCatching { TravelRepo.load(prefs, origin, events.await().first, skipWork = commute != null) }.getOrNull() else null
                     _state.update {
                         it.copy(
-                            travel = t ?: emptyList(), commute = commute, travelFrom = origin?.name ?: "",
+                            travel = t ?: emptyList(), commute = commute, travelFrom = origin?.name ?: "", placeIcons = prefs.places.associate { p -> p.name to p.icon },
                             preciseLocation = ContextCompat.checkSelfPermission(app, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED,
                         )
                     }

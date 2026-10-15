@@ -15,6 +15,12 @@ object Summary {
 
     private fun Long.grouped() = String.format(Locale.ITALY, "%,d", this)
 
+    /** Un tragitto per ogni mezzo scelto, in una frase: "in auto 18 min (esci entro le 08:37), con i mezzi pubblici 32 min (…)". */
+    fun byMode(rides: List<Travel>) = rides.joinToString(", ") { r ->
+        val how = when (r.mode) { "car" -> "in auto"; "transit" -> "con i mezzi pubblici"; "bike" -> "in bici"; "foot" -> "a piedi"; else -> r.mode }
+        "$how ${durationText(r.minutes)}" + (r.leaveBy?.let { " (esci entro le ${it.format(hm)})" } ?: "")
+    }
+
     /** Riepilogo composto in locale, senza rete: è sempre disponibile e fa da base a quello dell'IA. */
     fun rules(s: BriefState): String {
         val parts = mutableListOf<String>()
@@ -66,15 +72,15 @@ object Summary {
 
         s.commute?.takeIf { s.shows(CardKeys.TRAVEL) }?.let { c ->
             val day = if (c.day == s.now.toLocalDate()) "Oggi" else "Domani"
-            val ride = c.rides.firstOrNull { it.leaveBy != null }
             when {
                 c.off -> Unit
                 c.needsAnswer -> parts += "Dimmi a che ora entri al lavoro ${day.lowercase()} per sapere quando uscire."
-                ride != null -> parts += "$day per il lavoro esci entro le ${ride.leaveBy!!.format(hm)} (${TravelRepo.MODES[ride.mode]?.lowercase() ?: ride.mode}, ${durationText(ride.minutes)})."
+                c.rides.isNotEmpty() -> parts += "$day per il lavoro: ${byMode(c.rides)}."
             }
         }
-        s.travel.firstOrNull { it.leaveBy != null }?.let { t ->
-            if (t.leaveBy!!.isAfter(s.now)) parts += "Per «${t.label}» parti entro le ${t.leaveBy.format(hm)} (${TravelRepo.MODES[t.mode]?.lowercase() ?: t.mode})."
+        // Per il prossimo impegno con un luogo, di nuovo tutti i mezzi scelti.
+        s.travel.filter { it.leaveBy != null && it.leaveBy.isAfter(s.now) }.groupBy { it.label }.entries.firstOrNull()?.let { (label, rides) ->
+            parts += "Per «$label»: ${byMode(rides)}."
         }
 
         if (health != null) {
@@ -187,7 +193,9 @@ object Summary {
             emoji adatta all'argomento seguita da uno spazio; vai a capo dopo ogni riga.
             Tocca tutti gli argomenti presenti nei dati (meteo e allerte, agenda, spostamenti, salute, uso del telefono,
             squadra e partite, notizie, mercati, ricorrenze, curiosità): una riga per argomento, al massimo 9 righe,
-            unendo quelli vicini se serve. Di ogni argomento scegli il dato più utile adesso, non elencarli tutti.
+            unendo quelli vicini se serve. Di ogni argomento scegli il dato più utile adesso, non elencarli tutti,
+            tranne che per gli spostamenti: lì riporta il tempo e l'ora di uscita per ciascun mezzo presente nei dati
+            (auto, mezzi pubblici, bici, a piedi), senza ometterne nessuno.
             Metti per prime le cose che contano in questo momento della giornata e dai un consiglio pratico se serve.
             Usa solo i dati forniti, non inventare nulla. Una sola emoji per riga, all'inizio.
             Niente markdown, niente titoli, niente saluti iniziali.

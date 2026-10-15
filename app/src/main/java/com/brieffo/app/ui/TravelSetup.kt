@@ -32,6 +32,24 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Map
+import androidx.compose.material.icons.rounded.Place
+import androidx.compose.material.icons.rounded.FamilyRestroom
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.Restaurant
+import androidx.compose.material.icons.rounded.LocalCafe
+import androidx.compose.material.icons.rounded.ShoppingCart
+import androidx.compose.material.icons.rounded.LocalHospital
+import androidx.compose.material.icons.rounded.Park
+import androidx.compose.material.icons.rounded.Pets
+import androidx.compose.material.icons.rounded.LocalLibrary
+import androidx.compose.material.icons.rounded.Church
+import androidx.compose.material.icons.rounded.SportsSoccer
+import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.BeachAccess
+import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material.icons.rounded.FitnessCenter
 import androidx.compose.material.icons.rounded.School
@@ -109,6 +127,8 @@ internal fun TravelSetup(
     val context = LocalContext.current
     // Indice della destinazione di cui si sta cercando l'indirizzo sulla mappa, o -1.
     var picking by remember { mutableIntStateOf(-1) }
+    // Luogo personalizzato che si sta creando o modificando, o null.
+    var editing by remember { mutableStateOf<SavedPlace?>(null) }
     var check by remember { mutableIntStateOf(0) }
     LifecycleResumeEffect(Unit) {
         check++
@@ -124,7 +144,7 @@ internal fun TravelSetup(
         if (i > 0) HorizontalDivider(Modifier.padding(vertical = 8.dp), color = p.text.copy(alpha = 0.08f))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
-                when (name) { "Casa" -> Icons.Rounded.Home; "Lavoro" -> Icons.Rounded.Work; "Scuola" -> Icons.Rounded.School; else -> Icons.Rounded.FitnessCenter },
+                placeIcon(SavedPlace(name, "")),
                 null, Modifier.size(22.dp), tint = if (place != null) p.accent else p.sub,
             )
             Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
@@ -143,6 +163,35 @@ internal fun TravelSetup(
             OutlinedButton(onClick = { picking = i }) { Text(if (place == null) "Imposta" else "Cambia", color = p.accent) }
         }
     }
+    // I luoghi aggiunti a mano, con il loro nome e la loro icona.
+    places.filter { it.custom }.forEach { place ->
+        HorizontalDivider(Modifier.padding(vertical = 8.dp), color = p.text.copy(alpha = 0.08f))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(placeIcon(place), null, Modifier.size(22.dp), tint = p.accent)
+            Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                Text(place.name, fontSize = 15.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(place.address, fontSize = 12.sp, lineHeight = 16.sp, color = p.sub, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+            IconButton(onClick = { onPlaces(places - place) }) { Icon(Icons.Rounded.DeleteOutline, "Togli ${place.name}", tint = p.sub) }
+            OutlinedButton(onClick = { editing = place }) { Text("Modifica", color = p.accent) }
+        }
+    }
+    if (places.count { it.custom } < 8) OutlinedButton(onClick = { editing = SavedPlace("", "", icon = "place") }, modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) {
+        Icon(Icons.Rounded.Add, null, Modifier.size(18.dp), tint = p.accent)
+        Text("Aggiungi un luogo", color = p.accent, modifier = Modifier.padding(start = 8.dp))
+    }
+    editing?.let { start ->
+        PlaceEditor(
+            start = start,
+            taken = places.map { it.name }.filter { it != start.name }.toSet() + TravelRepo.PRESETS,
+            onDismiss = { editing = null },
+            onSave = { saved ->
+                onPlaces(places.filter { it.name != start.name } + saved)
+                editing = null
+            },
+        )
+    }
+
     Spacer(Modifier.height(6.dp))
     Note("Per il lavoro, la sera (e la mattina prima di entrare) il brief ti chiede a che ora entri e calcola da solo quando uscire. Le destinazioni in cui ti trovi già non compaiono.")
 
@@ -187,6 +236,74 @@ internal fun TravelSetup(
             },
         )
     }
+}
+
+/** Icone tra cui scegliere per un luogo personalizzato, con il nome con cui vengono salvate. */
+internal val PLACE_ICONS = linkedMapOf(
+    "place" to Icons.Rounded.Place, "family" to Icons.Rounded.FamilyRestroom, "favorite" to Icons.Rounded.Favorite,
+    "restaurant" to Icons.Rounded.Restaurant, "cafe" to Icons.Rounded.LocalCafe, "shop" to Icons.Rounded.ShoppingCart,
+    "health" to Icons.Rounded.LocalHospital, "park" to Icons.Rounded.Park, "pets" to Icons.Rounded.Pets,
+    "library" to Icons.Rounded.LocalLibrary, "church" to Icons.Rounded.Church, "sport" to Icons.Rounded.SportsSoccer,
+    "music" to Icons.Rounded.MusicNote, "beach" to Icons.Rounded.BeachAccess, "star" to Icons.Rounded.Star,
+)
+
+/** L'icona di una destinazione: fissa per casa, lavoro, scuola e palestra, scelta dall'utente per le altre. */
+internal fun placeIcon(place: SavedPlace?): ImageVector = when (place?.name) {
+    "Casa" -> Icons.Rounded.Home
+    "Lavoro" -> Icons.Rounded.Work
+    "Scuola" -> Icons.Rounded.School
+    "Palestra" -> Icons.Rounded.FitnessCenter
+    else -> PLACE_ICONS[place?.icon] ?: Icons.Rounded.Place
+}
+
+/** Finestra per creare o modificare un luogo personalizzato: nome, icona e indirizzo scelto sulla mappa. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun PlaceEditor(start: SavedPlace, taken: Set<String>, onDismiss: () -> Unit, onSave: (SavedPlace) -> Unit) {
+    val p = LocalPalette.current
+    var name by remember { mutableStateOf(start.name) }
+    var icon by remember { mutableStateOf(start.icon.ifBlank { "place" }) }
+    var address by remember { mutableStateOf(if (start.lat != null && start.lon != null) Address(start.address, start.lat, start.lon) else null) }
+    var picking by remember { mutableStateOf(false) }
+    val clash = name.trim() in taken
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (start.name.isBlank()) "Nuovo luogo" else "Modifica luogo") },
+        text = {
+            Column {
+                OutlinedTextField(
+                    name, { name = it.take(30) }, label = { Text("Nome") }, singleLine = true,
+                    supportingText = { if (clash) Text("C'è già un luogo con questo nome") },
+                    shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth(),
+                )
+                Text("Icona", fontSize = 13.sp, color = p.sub, modifier = Modifier.padding(top = 6.dp, bottom = 6.dp))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    PLACE_ICONS.forEach { (key, vector) ->
+                        val on = key == icon
+                        Box(
+                            Modifier.size(40.dp).clip(RoundedCornerShape(12.dp))
+                                .background(if (on) p.accent else p.text.copy(alpha = 0.07f))
+                                .clickable(onClickLabel = key) { icon = key },
+                            contentAlignment = Alignment.Center,
+                        ) { Icon(vector, null, Modifier.size(22.dp), tint = if (on) p.onAccent else p.sub) }
+                    }
+                }
+                Text(address?.label ?: "Nessun indirizzo scelto", fontSize = 13.sp, lineHeight = 18.sp, color = p.sub, modifier = Modifier.padding(top = 12.dp))
+                OutlinedButton(onClick = { picking = true }, modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) {
+                    Icon(Icons.Rounded.Map, null, Modifier.size(18.dp), tint = p.accent)
+                    Text(if (address == null) "Scegli sulla mappa" else "Cambia sulla mappa", color = p.accent, modifier = Modifier.padding(start = 8.dp))
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { address?.let { onSave(SavedPlace(name.trim(), it.label, it.lat, it.lon, icon)) } },
+                enabled = name.isNotBlank() && !clash && address != null,
+            ) { Text("Salva", color = if (name.isNotBlank() && !clash && address != null) p.accent else p.sub) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Annulla", color = p.sub) } },
+    )
+    if (picking) AddressPicker(initial = address, query = address?.label ?: "", onDismiss = { picking = false }, onPick = { address = it; picking = false })
 }
 
 /**

@@ -75,6 +75,7 @@ import androidx.compose.material3.TimePicker
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.foundation.clickable
 import com.brieffo.app.data.Commute
+import com.brieffo.app.data.SavedPlace
 import com.brieffo.app.data.Travel
 import com.brieffo.app.data.CardKeys
 import com.brieffo.app.data.wxText
@@ -233,7 +234,14 @@ fun TravelCard(s: BriefState, onSetup: () -> Unit, onGrantPrecise: () -> Unit, o
         // Le altre destinazioni (e il prossimo impegno con un luogo): una alla volta, con una riga per mezzo.
         s.travel.groupBy { it.label }.entries.forEachIndexed { i, (label, rides) ->
             if (i > 0 || c != null) HorizontalDivider(Modifier.padding(vertical = 12.dp), color = p.text.copy(alpha = 0.08f))
-            Text(label, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // Le destinazioni salvate hanno la loro icona; il prossimo impegno in agenda quella del calendario.
+                Icon(
+                    if (label in s.placeIcons) placeIcon(SavedPlace(label, "", icon = s.placeIcons.getValue(label))) else Icons.Rounded.Event,
+                    null, Modifier.size(18.dp), tint = p.sub,
+                )
+                Text(label, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 8.dp))
+            }
             rides.forEach { RideRow(it) }
         }
         if (c == null && s.travel.isEmpty()) Hint(
