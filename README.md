@@ -14,6 +14,14 @@ che cambia con l'ora del giorno.
 </div>
 
 <p align="center">
+  <a href="docs/video/brieffo_presentazione.mp4">
+    <img src="docs/video/brieffo_presentazione.jpg" width="80%" alt="Video di presentazione di Brieffo: tocca per guardarlo" />
+  </a>
+  <br />
+  <sub>Il video di presentazione, 40 secondi in Full HD: tocca l'immagine per guardarlo.</sub>
+</p>
+
+<p align="center">
   <img src="docs/screenshots/benvenuto.png" width="19%" alt="Schermata di benvenuto" />
   <img src="docs/screenshots/brief.png" width="19%" alt="Il brief con riepilogo e meteo" />
   <img src="docs/screenshots/notizie.png" width="19%" alt="La scheda delle notizie" />
