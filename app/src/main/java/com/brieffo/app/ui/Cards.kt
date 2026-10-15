@@ -72,6 +72,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -525,18 +526,22 @@ private fun TopicTag(topic: String) {
 @Composable
 private fun NewsImage(n: NewsItem, modifier: Modifier, letter: Boolean = true) {
     val c = topicColor(n.topic)
-    // Le notizie oltre le prime arrivano senza foto: la si cerca quando la riga entra in scena.
-    val image by produceState(n.image, n.link) {
-        if (value == null) value = withContext(Dispatchers.IO) { NewsRepo.preview(n.link) }
-    }
-    Box(modifier.background(Brush.linearGradient(listOf(c, c.copy(alpha = 0.55f)))), contentAlignment = Alignment.Center) {
-        if (image == null) {
-            if (letter) Text(n.topic.take(1), fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.55f))
-        } else {
-            AsyncImage(
-                model = ImageRequest.Builder(LocalContext.current).data(image).crossfade(true).build(),
-                contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.matchParentSize(),
-            )
+    // Lo stato dell'immagine appartiene a questa notizia: cambiando fonte con i filtri lo stesso posto sullo
+    // schermo ospita un'altra notizia, e senza la chiave terrebbe la foto di quella di prima.
+    key(n.link) {
+        // Le notizie oltre le prime arrivano senza foto: la si cerca quando la riga entra in scena.
+        val image by produceState(n.image) {
+            if (value == null) value = withContext(Dispatchers.IO) { NewsRepo.preview(n.link) }
+        }
+        Box(modifier.background(Brush.linearGradient(listOf(c, c.copy(alpha = 0.55f)))), contentAlignment = Alignment.Center) {
+            if (image == null) {
+                if (letter) Text(n.topic.take(1), fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.55f))
+            } else {
+                AsyncImage(
+                    model = ImageRequest.Builder(LocalContext.current).data(image).crossfade(true).build(),
+                    contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.matchParentSize(),
+                )
+            }
         }
     }
 }
