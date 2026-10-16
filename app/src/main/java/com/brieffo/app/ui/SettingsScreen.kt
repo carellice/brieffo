@@ -47,6 +47,7 @@ import androidx.compose.material.icons.rounded.SwapVert
 import androidx.compose.material.icons.rounded.Widgets
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.CalendarMonth
+import androidx.compose.material.icons.rounded.Checklist
 import androidx.compose.material.icons.rounded.Commute
 import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.Newspaper
@@ -108,6 +109,8 @@ import com.brieffo.app.data.CardKeys
 import com.brieffo.app.data.Feed
 import com.brieffo.app.data.GeminiException
 import com.brieffo.app.data.LocalVoice
+import com.brieffo.app.data.NotionPage
+import com.brieffo.app.data.NotionRepo
 import com.brieffo.app.data.NewsRepo
 import com.brieffo.app.data.Prefs
 import com.brieffo.app.data.SportRepo
@@ -364,6 +367,12 @@ fun SettingsScreen(
     val time = rememberTimePickerState(prefs.notifyHour, prefs.notifyMinute, is24Hour = true)
     var key by remember { mutableStateOf(prefs.geminiKey) }
     var collapsed by remember { mutableStateOf(prefs.summaryCollapsed) }
+    var notionToken by remember { mutableStateOf(prefs.notionToken) }
+    var notionPage by remember { mutableStateOf(prefs.notionPageId) }
+    var notionTitle by remember { mutableStateOf(prefs.notionPageTitle) }
+    var notionPages by remember { mutableStateOf<List<NotionPage>?>(null) }
+    var notionBusy by remember { mutableStateOf(false) }
+    var notionMessage by remember { mutableStateOf<String?>(null) }
     var leaveAlerts by remember { mutableStateOf(prefs.leaveAlerts) }
     var liveAlerts by remember { mutableStateOf(prefs.liveAlerts) }
     var aiSpeed by remember { mutableStateOf(prefs.aiSpeed) }
@@ -412,6 +421,9 @@ fun SettingsScreen(
         prefs.notifyMinute = time.minute
         prefs.geminiKey = key
         prefs.summaryCollapsed = collapsed
+        prefs.notionToken = notionToken
+        prefs.notionPageId = notionPage
+        prefs.notionPageTitle = notionTitle
         prefs.leaveAlerts = leaveAlerts
         prefs.liveAlerts = liveAlerts
         prefs.aiSpeed = aiSpeed
@@ -426,7 +438,7 @@ fun SettingsScreen(
             // Prima si scrivono le modifiche ancora aperte in questa pagina, così il file le contiene.
             save()
             val ok = runCatching { context.contentResolver.openOutputStream(uri)!!.use { it.write(prefs.export().toByteArray()) } }.isSuccess
-            backupMessage = if (ok) "Configurazione esportata. Il file contiene anche la chiave di Gemini: non condividerlo." else "Non sono riuscito a scrivere il file."
+            backupMessage = if (ok) "Configurazione esportata. Il file contiene anche le chiavi di Gemini e di Notion: non condividerlo." else "Non sono riuscito a scrivere il file."
         }
     }
     val importBackup = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -449,6 +461,9 @@ fun SettingsScreen(
                 time.minute = prefs.notifyMinute
                 key = prefs.geminiKey
                 collapsed = prefs.summaryCollapsed
+                notionToken = prefs.notionToken
+                notionPage = prefs.notionPageId
+                notionTitle = prefs.notionPageTitle
                 leaveAlerts = prefs.leaveAlerts
                 liveAlerts = prefs.liveAlerts
                 aiSpeed = prefs.aiSpeed
@@ -898,6 +913,91 @@ fun SettingsScreen(
                     OutlinedButton(onClick = { backupFolder.launch(null) }, modifier = Modifier.weight(1f)) { Text("Cambia cartella", color = p.accent) }
                     OutlinedButton(onClick = { AutoBackup.disable(context); backupCheck++ }, modifier = Modifier.weight(1f)) { Text("Disattiva", color = p.accent) }
                 }
+            }
+        }
+
+        if (CardKeys.TODO !in hidden) SettingsSection("Notion", Icons.Rounded.Checklist, if (notionPage.isBlank() || notionToken.isBlank()) "To-do list non collegata" else "To-do list: $notionTitle", "Notion" in openSections, { openSections = if ("Notion" in openSections) openSections - "Notion" else openSections + "Notion" }) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Note("Collega una pagina di Notion con le caselle da spuntare: la vedi nella scheda \"Da fare\" e puoi spuntare le cose direttamente da qui.")
+                Column(
+                    Modifier.fillMaxWidth().background(p.text.copy(alpha = 0.06f), RoundedCornerShape(18.dp)).padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Text("Come collegarla", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    listOf(
+                        "Tocca il pulsante qui sotto e accedi a Notion.",
+                        "Crea una nuova integrazione interna, chiamala \"Brieffo\" e scegli il tuo spazio di lavoro.",
+                        "Tra le funzionalità lascia attivi \"Leggere i contenuti\" e \"Aggiornare i contenuti\", poi salva.",
+                        "Copia la chiave segreta dell'integrazione e incollala qui sotto.",
+                        "In Notion apri la tua to-do list, tocca ⋯ > Connessioni e aggiungi \"Brieffo\".",
+                        "Torna qui e tocca \"Trova le mie pagine\".",
+                    ).forEachIndexed { i, step ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text(
+                                "${i + 1}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = p.onAccent, textAlign = TextAlign.Center,
+                                modifier = Modifier.size(22.dp).background(p.accent, CircleShape).wrapContentHeight(),
+                            )
+                            Text(step, fontSize = 14.sp, lineHeight = 19.sp, modifier = Modifier.weight(1f))
+                        }
+                    }
+                    OutlinedButton(onClick = { onOpenLink("https://www.notion.so/profile/integrations") }, modifier = Modifier.fillMaxWidth()) {
+                        Text("Apri le integrazioni di Notion", color = p.accent)
+                    }
+                }
+                Field(notionToken, { notionToken = it; notionPages = null; notionMessage = null }, "Chiave dell'integrazione di Notion", secret = true)
+                OutlinedButton(
+                    onClick = {
+                        notionBusy = true; notionMessage = null
+                        pageScope.launch {
+                            val r = withContext(Dispatchers.IO) { runCatching { NotionRepo.pages(notionToken) } }
+                            notionPages = r.getOrNull()
+                            notionMessage = r.exceptionOrNull()?.let { "Non riesco a leggere Notion: ${it.message}." }
+                                ?: if (notionPages.isNullOrEmpty()) "Nessuna pagina condivisa con l'integrazione: in Notion apri la to-do list, poi ⋯ > Connessioni e aggiungi l'integrazione." else null
+                            notionBusy = false
+                        }
+                    },
+                    enabled = notionToken.isNotBlank() && !notionBusy,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    if (notionBusy) {
+                        CircularProgressIndicator(Modifier.size(16.dp), color = p.accent, strokeWidth = 2.dp)
+                        Spacer(Modifier.width(10.dp))
+                    }
+                    Text(if (notionBusy) "Cerco…" else "Trova le mie pagine", color = if (notionToken.isNotBlank()) p.accent else p.sub)
+                }
+                notionPages?.takeIf { it.isNotEmpty() }?.let { list ->
+                    Note("Scegli la pagina con la tua to-do list:")
+                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(p.text.copy(alpha = 0.06f))) {
+                        list.forEach { page ->
+                            val on = page.id == notionPage
+                            Row(
+                                Modifier.fillMaxWidth().clickable {
+                                    notionPage = page.id; notionTitle = page.title; notionMessage = null
+                                    // Si contano subito le caselle, così si vede che la pagina è quella giusta.
+                                    pageScope.launch {
+                                        val r = withContext(Dispatchers.IO) { runCatching { NotionRepo.todos(notionToken, page.id) } }
+                                        notionMessage = r.fold(
+                                            { t -> if (t.isEmpty()) "In «${page.title}» non trovo caselle da spuntare." else "Collegata: ${t.count { !it.checked }} da fare e ${t.count { it.checked }} completate." },
+                                            { e -> "Non riesco a leggere «${page.title}»: ${e.message}." },
+                                        )
+                                    }
+                                }.padding(horizontal = 14.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(page.icon.ifBlank { "📄" }, fontSize = 18.sp, modifier = Modifier.width(32.dp))
+                                Text(page.title, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                                if (on) Icon(Icons.Rounded.Check, "Scelta", Modifier.size(20.dp), tint = p.accent)
+                            }
+                        }
+                    }
+                }
+                if (notionPage.isNotBlank() && notionPages == null) Note("Pagina collegata: «$notionTitle».")
+                notionMessage?.let { Text(it, fontSize = 13.sp, lineHeight = 18.sp) }
+                if (notionToken.isNotBlank() || notionPage.isNotBlank()) OutlinedButton(
+                    onClick = { notionToken = ""; notionPage = ""; notionTitle = ""; notionPages = null; notionMessage = null },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Scollega Notion", color = p.accent) }
+                Note("La chiave resta solo su questo telefono (e nel file di backup, se lo esporti). Brieffo vede soltanto le pagine che condividi con l'integrazione.")
             }
         }
 

@@ -64,6 +64,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.brieffo.app.data.BriefState
+import androidx.compose.material.icons.rounded.Checklist
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
+import androidx.compose.ui.text.style.TextDecoration
+import com.brieffo.app.data.Todo
 import androidx.compose.material.icons.rounded.MyLocation
 import androidx.compose.material.icons.rounded.Work
 import androidx.compose.material3.AlertDialog
@@ -569,6 +574,68 @@ fun TomorrowCard(s: BriefState) {
             )
             alarm != null -> OccasionRow(Icons.Rounded.Alarm, "Sveglia alle ${alarm.format(hm)}", "Nessun impegno con orario: puoi prendertela comoda")
         }
+    }
+}
+
+/** Una casella della to-do list: tocco sulla riga o sulla casella per spuntarla, anche su Notion. */
+@Composable
+private fun TodoRow(t: Todo, onToggle: (String, Boolean) -> Unit) {
+    val p = LocalPalette.current
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { onToggle(t.id, !t.checked) }.padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Checkbox(
+            checked = t.checked, onCheckedChange = { onToggle(t.id, it) },
+            colors = CheckboxDefaults.colors(checkedColor = p.accent, uncheckedColor = p.sub, checkmarkColor = p.onAccent),
+        )
+        Text(
+            t.text, fontSize = 15.sp, lineHeight = 20.sp, color = if (t.checked) p.sub else p.text,
+            textDecoration = if (t.checked) TextDecoration.LineThrough else null, modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+/** La to-do list di Notion: prima le cose da fare, le spuntate si aprono a parte. */
+@Composable
+fun TodoCard(s: BriefState, onSetup: () -> Unit, onToggle: (String, Boolean) -> Unit) {
+    val p = LocalPalette.current
+    val open = s.todos.filter { !it.checked }
+    val done = s.todos.filter { it.checked }
+    var showAll by remember { mutableStateOf(false) }
+    var showDone by remember { mutableStateOf(false) }
+    BriefCard(title = "Da fare", icon = Icons.Rounded.Checklist, trailing = if (s.todos.isNotEmpty()) "${open.size} su ${s.todos.size}" else null) {
+        when {
+            s.todoState == "unset" -> {
+                Hint("Collega la tua to-do list di Notion: qui vedi le cose da fare e le spunti con un tocco.")
+                ActionButton("Collega Notion", onSetup)
+                return@BriefCard
+            }
+            s.todos.isEmpty() && s.todoState.isNotBlank() -> {
+                Hint("Non riesco a leggere la to-do list: ${s.todoState}.")
+                return@BriefCard
+            }
+            s.todos.isEmpty() -> {
+                Hint(if (s.loading) "Leggo la to-do list…" else "La pagina «${s.todoPage}» non ha caselle da spuntare.")
+                return@BriefCard
+            }
+        }
+        if (open.isEmpty()) Text("Hai spuntato tutto.", fontSize = 15.sp, color = p.sub, modifier = Modifier.padding(vertical = 6.dp))
+        val visible = if (showAll) open else open.take(6)
+        visible.forEach { TodoRow(it, onToggle) }
+        if (open.size > 6) Text(
+            if (showAll) "Mostra meno" else "Mostra tutte (${open.size})", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = p.accent,
+            modifier = Modifier.padding(top = 6.dp).clip(RoundedCornerShape(8.dp)).clickable { showAll = !showAll }.padding(vertical = 4.dp),
+        )
+        if (done.isNotEmpty()) {
+            Text(
+                if (showDone) "Nascondi le completate" else "Completate (${done.size})", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = p.sub,
+                modifier = Modifier.padding(top = 8.dp).clip(RoundedCornerShape(8.dp)).clickable { showDone = !showDone }.padding(vertical = 4.dp),
+            )
+            if (showDone) done.forEach { TodoRow(it, onToggle) }
+        }
+        if (s.todoState.isNotBlank()) Text(s.todoState, fontSize = 12.sp, lineHeight = 16.sp, color = p.sub, modifier = Modifier.padding(top = 6.dp))
+        Text("Da Notion · «${s.todoPage}»", fontSize = 11.sp, color = p.sub.copy(alpha = 0.8f), modifier = Modifier.padding(top = 10.dp))
     }
 }
 

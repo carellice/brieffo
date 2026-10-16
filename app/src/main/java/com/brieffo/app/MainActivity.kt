@@ -131,6 +131,7 @@ class MainActivity : ComponentActivity() {
                     grantContacts = { contacts.launch(Manifest.permission.READ_CONTACTS) },
                     grantPrecise = { precise.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)) },
                     setWorkStart = vm::setWorkStart,
+                    toggleTodo = vm::toggleTodo,
                     openLink = { url -> runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } },
                 )
             }

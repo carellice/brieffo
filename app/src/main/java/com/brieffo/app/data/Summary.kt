@@ -70,6 +70,10 @@ object Summary {
             }
         }
 
+        // To-do list di Notion: quante cose restano e la prima.
+        s.todos.filter { !it.checked }.takeIf { s.shows(CardKeys.TODO) && it.isNotEmpty() }?.let { open ->
+            parts += if (open.size == 1) "Ti resta una cosa da fare: «${open[0].text}»." else "Hai ${open.size} cose da fare, a partire da «${open[0].text}»."
+        }
         s.commute?.takeIf { s.shows(CardKeys.TRAVEL) }?.let { c ->
             val day = if (c.day == s.now.toLocalDate()) "Oggi" else "Domani"
             when {
@@ -139,6 +143,9 @@ object Summary {
                 appendLine("Impegni di oggi: " + events(s.today))
                 appendLine("Impegni di domani: " + events(s.tomorrow))
             }
+            if (s.shows(CardKeys.TODO)) s.todos.filter { !it.checked }.takeIf { it.isNotEmpty() }?.let { open ->
+                appendLine("Cose da fare (to-do list dell'utente, ${open.size} aperte): " + open.take(10).joinToString("; ") { it.text })
+            }
             if (s.shows(CardKeys.TRAVEL)) s.commute?.let { c ->
                 val day = if (c.day == s.now.toLocalDate()) "oggi" else "domani"
                 when {
@@ -191,7 +198,7 @@ object Summary {
             Sei l'assistente di un'app di riepilogo giornaliero. Scrivi in italiano un riepilogo caldo e concreto,
             rivolgendoti all'utente con il tu. Ogni riga è una frase breve su un solo argomento e comincia con una
             emoji adatta all'argomento seguita da uno spazio; vai a capo dopo ogni riga.
-            Tocca tutti gli argomenti presenti nei dati (meteo e allerte, agenda, spostamenti, salute, uso del telefono,
+            Tocca tutti gli argomenti presenti nei dati (meteo e allerte, agenda, cose da fare, spostamenti, salute, uso del telefono,
             squadra e partite, notizie, mercati, ricorrenze, curiosità): una riga per argomento, al massimo 9 righe,
             unendo quelli vicini se serve. Di ogni argomento scegli il dato più utile adesso, non elencarli tutti,
             tranne che per gli spostamenti: lì riporta il tempo e l'ora di uscita per ciascun mezzo presente nei dati

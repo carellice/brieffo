@@ -49,6 +49,8 @@ dependencies {
     implementation("androidx.health.connect:connect-client:1.1.0")
     implementation("androidx.work:work-runtime-ktx:2.10.5")
     implementation("io.coil-kt:coil-compose:2.7.0")
+    // Client HTTP per Notion, che per spuntare le caselle chiede il metodo PATCH.
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("androidx.glance:glance-appwidget:1.1.1")
     // Mappa di OpenStreetMap per scegliere l'indirizzo del lavoro.
     implementation("org.osmdroid:osmdroid-android:6.1.20")

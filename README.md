@@ -52,6 +52,7 @@ Anche i colori seguono l'ora: chiari e caldi al mattino, scuri e profondi la ser
 | **Allerte meteo** | Allerte gialle, arancioni e rosse per la tua regione (solo Italia). |
 | **Pollini** | Graminacee, betulla, ontano, olivo, artemisia e ambrosia, quando presenti. |
 | **Agenda** | Impegni di oggi e domani dai calendari che scegli tu. |
+| **Da fare** | La tua to-do list di Notion: le caselle ancora da spuntare, e le spunti direttamente dal brief. |
 | **Spostamenti** | Tempo verso il lavoro e verso il prossimo impegno con i mezzi che scegli (auto, mezzi pubblici, bici, a piedi, anche più d'uno insieme), con l'ora entro cui partire. |
 | **Salute e attività** | Passi con obiettivo, sonno, battito, calorie e distanza da Health Connect. |
 | **Tempo di utilizzo** | Quanto sei stato al telefono oggi e su quali app. |
@@ -85,6 +86,7 @@ della giornata oppure, se preferisci, lo decidi tu dalle impostazioni.
 - **Widget per la Home**: la mia giornata (meteo, impegno e partita insieme), prossima partita, meteo, agenda e riepilogo, da aggiungere dalle impostazioni o dal menu dei widget di Android.
 - **Backup della configurazione**: esporta tutto in un file e importalo sul telefono nuovo, oppure scegli una cartella e il backup si aggiorna da solo.
 - **Meteo animato**: il sole gira e manda riflessi, pioggia e neve cadono sulla scheda, i temporali lampeggiano. Si può spegnere dalle impostazioni.
+- **To-do list da Notion**: collega la pagina con le tue caselle (guida passo passo nelle impostazioni, alla voce *Notion*) e spunta le cose fatte senza aprire Notion.
 - **Icone disegnate su misura** per il meteo e la fase lunare.
 
 ## Riepilogo con l'intelligenza artificiale
@@ -100,9 +102,10 @@ AI Studio. La guida passo passo è nelle impostazioni, alla voce *Riepilogo con 
 - **Calendario, contatti, salute e tempo di utilizzo restano sul telefono.**
 - **La posizione** per meteo e allerte viene arrotondata a circa un chilometro. Per i tempi di spostamento il punto di partenza
   (preciso solo se lo consenti) e la destinazione vengono inviati ai servizi che calcolano il percorso: OpenStreetMap per auto, bici e piedi, Transitous per i mezzi pubblici.
-- **Sola lettura**: Brieffo non crea né modifica eventi, e non scrive dati di salute.
+- **Sola lettura**: Brieffo non crea né modifica eventi, e non scrive dati di salute. L'unica cosa che modifica è la casella di Notion che spunti tu.
+- **Notion**: la chiave dell'integrazione resta sul telefono e Brieffo vede solo le pagine che condividi con l'integrazione.
 - **Con Gemini attivo** i dati delle schede accese (meteo, impegni con luogo, spostamenti, attività,
-  app più usate, squadra, titoli delle notizie, mercati, nomi dei compleanni) vengono inviati a Google
+  app più usate, cose da fare, squadra, titoli delle notizie, mercati, nomi dei compleanni) vengono inviati a Google
   per scrivere il riepilogo. Le schede spente restano fuori; senza chiave non viene inviato nulla.
 
 ### Permessi
@@ -176,6 +179,7 @@ Brieffo usa solo servizi gratuiti.
 | Sport | ESPN, [TheSportsDB](https://www.thesportsdb.com) |
 | Cambi | [Frankfurter](https://frankfurter.dev) (dati BCE) |
 | Criptovalute | [CoinGecko](https://www.coingecko.com) |
+| To-do list | [Notion](https://developers.notion.com), con la tua integrazione |
 | Santi e "accadde oggi" | [Wikipedia](https://it.wikipedia.org) |
 | Festività | [Nager.Date](https://date.nager.at) |
 

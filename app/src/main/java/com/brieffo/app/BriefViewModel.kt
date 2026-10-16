@@ -14,6 +14,7 @@ import com.brieffo.app.data.Event
 import com.brieffo.app.data.Occasions
 import com.brieffo.app.data.OccasionsRepo
 import com.brieffo.app.data.SportRepo
+import com.brieffo.app.data.NotionRepo
 import com.brieffo.app.data.TravelRepo
 import com.brieffo.app.data.CalendarRepo
 import com.brieffo.app.data.Daypart
@@ -145,6 +146,20 @@ class BriefViewModel(app: Application) : AndroidViewModel(app) {
                     } else null
                     _state.update { it.copy(tomorrowTravel = t ?: emptyList()) }
                 }
+                launch(Dispatchers.IO) {
+                    val token = prefs.notionToken; val page = prefs.notionPageId
+                    if (!on(CardKeys.TODO) || token.isBlank() || page.isBlank()) {
+                        _state.update { it.copy(todos = emptyList(), todoState = "unset", todoPage = "") }
+                    } else {
+                        val r = runCatching { NotionRepo.todos(token, page) }
+                        _state.update {
+                            it.copy(
+                                todos = r.getOrDefault(it.todos), todoPage = prefs.notionPageTitle,
+                                todoState = r.exceptionOrNull()?.let { e -> e.message ?: "errore di Notion" } ?: "",
+                            )
+                        }
+                    }
+                }
                 if (on(CardKeys.HEALTH)) launch(Dispatchers.IO) {
                     val h = runCatching { HealthRepo.load(app) }.getOrDefault(HealthState.Unavailable)
                     _state.update { it.copy(health = h) }
@@ -205,6 +220,23 @@ class BriefViewModel(app: Application) : AndroidViewModel(app) {
             // I widget della schermata Home mostrano gli stessi dati appena caricati.
             val shown = _state.value
             withContext(Dispatchers.IO) { runCatching { WidgetStore.update(app, shown) } }
+        }
+    }
+
+    /**
+     * Spunta (o toglie la spunta a) una casella della to-do list. Sullo schermo cambia subito; se Notion
+     * rifiuta, la casella torna com'era e la scheda dice perché.
+     */
+    fun toggleTodo(id: String, checked: Boolean) {
+        val token = prefs.notionToken
+        _state.update { s -> s.copy(todos = s.todos.map { if (it.id == id) it.copy(checked = checked) else it }) }
+        viewModelScope.launch {
+            val r = withContext(Dispatchers.IO) { runCatching { NotionRepo.setChecked(token, id, checked) } }
+            r.exceptionOrNull()?.let { e ->
+                _state.update { s ->
+                    s.copy(todos = s.todos.map { if (it.id == id) it.copy(checked = !checked) else it }, todoState = "Non riesco a spuntarla: ${e.message}")
+                }
+            }
         }
     }
 

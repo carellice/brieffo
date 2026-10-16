@@ -79,6 +79,8 @@ class BriefActions(
     val grantPrecise: () -> Unit,
     /** Salva l'orario d'ingresso al lavoro di un giorno ("HH:mm", "off" se non si lavora, null per cancellarlo). */
     val setWorkStart: (LocalDate, String?) -> Unit,
+    /** Spunta o toglie la spunta a una casella della to-do list di Notion. */
+    val toggleTodo: (String, Boolean) -> Unit,
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -129,6 +131,7 @@ fun BriefScreen(s: BriefState, actions: BriefActions, scroll: ScrollState = reme
                 CardKeys.OCCASIONS to { OccasionsCard(s, actions.grantContacts) },
                 CardKeys.EXTRAS to { ExtrasCard(s.onThisDay, s.moon, s.battery, s.nextAlarm) },
                 CardKeys.TOMORROW to { TomorrowCard(s) },
+                CardKeys.TODO to { TodoCard(s, actions.openSettings, actions.toggleTodo) },
             )
             // Senza un ordine scelto a mano si segue il momento della giornata: al mattino si guarda avanti, la sera si tira il bilancio.
             // L'ordine è quello scelto nelle impostazioni; chi non l'ha mai toccato ha quello proposto dall'app.

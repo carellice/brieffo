@@ -179,6 +179,17 @@ class Prefs(ctx: Context) {
         get() = sp.getInt("backupHash", 0)
         set(v) = sp.edit { putInt("backupHash", v) }
 
+    /** Chiave dell'integrazione personale di Notion e pagina della to-do list scelta. */
+    var notionToken: String
+        get() = sp.getString("notionToken", "") ?: ""
+        set(v) = sp.edit { putString("notionToken", v.trim()) }
+    var notionPageId: String
+        get() = sp.getString("notionPageId", "") ?: ""
+        set(v) = sp.edit { putString("notionPageId", v) }
+    var notionPageTitle: String
+        get() = sp.getString("notionPageTitle", "") ?: ""
+        set(v) = sp.edit { putString("notionPageTitle", v) }
+
     /** Vero se l'app avvisa poco prima dell'ora di uscire per un impegno con un luogo. */
     var leaveAlerts: Boolean
         get() = sp.getBoolean("leaveAlerts", true)
@@ -327,7 +338,7 @@ class Prefs(ctx: Context) {
 
     private companion object {
         const val BACKUP_APP = "brieffo"
-        val BACKUP_STRINGS = setOf("name", "city", "geminiKey", "feeds", "themeMode", "team", "teamRef", "workAddress", "workPoint", "places", "travelModes", "travelMode", "cardOrder", "speechVoice", "speechEngine", "localVoice", "aiSpeed")
+        val BACKUP_STRINGS = setOf("name", "city", "geminiKey", "feeds", "themeMode", "team", "teamRef", "workAddress", "workPoint", "places", "travelModes", "travelMode", "cardOrder", "speechVoice", "speechEngine", "localVoice", "aiSpeed", "notionToken", "notionPageId", "notionPageTitle")
         val BACKUP_INTS = setOf("stepGoal", "notifyHour", "notifyMinute", "accent", "speechSpeed")
         val BACKUP_BOOLEANS = setOf("notifyEnabled", "summaryCollapsed", "railRight", "weatherAnimated", "leaveAlerts", "liveAlerts")
         val BACKUP_SETS = setOf("hidden")

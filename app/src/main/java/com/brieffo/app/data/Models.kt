@@ -208,16 +208,25 @@ object CardKeys {
     const val HEALTH = "health"; const val USAGE = "usage"; const val NEWS = "news"
     const val MARKETS = "markets"; const val TRAVEL = "travel"; const val SPORT = "sport"
     const val OCCASIONS = "occasions"; const val EXTRAS = "extras"
+    /** La to-do list di Notion. */
+    const val TODO = "todo"
     /** Lo sguardo a domani: compare solo nel brief della sera e della notte. */
     const val TOMORROW = "tomorrow"
 
     /** Schede che si possono riordinare, nell'ordine proposto a chi inizia a sistemarle a mano. */
-    val sortable = listOf(TOMORROW, WEATHER, TRAVEL, AGENDA, HEALTH, NEWS, SPORT, OCCASIONS, MARKETS, EXTRAS, USAGE)
+    val sortable = listOf(TOMORROW, WEATHER, TRAVEL, AGENDA, TODO, HEALTH, NEWS, SPORT, OCCASIONS, MARKETS, EXTRAS, USAGE)
 
     /** Ordine completo a partire da quello salvato: via le chiavi sconosciute, in coda le schede che mancano. */
-    fun ordered(saved: List<String>) = saved.filter { it in sortable }.distinct().let { known ->
-        // Chi aveva già scelto un ordine prima che esistesse "Domani" se lo ritrova in cima, dove serve la sera.
-        (if (TOMORROW in known) emptyList() else listOf(TOMORROW)) + known + (sortable - known.toSet() - TOMORROW)
+    fun ordered(saved: List<String>): List<String> {
+        val out = saved.filter { it in sortable }.distinct().toMutableList()
+        // Le schede arrivate con un aggiornamento entrano accanto a quella che le precede nell'ordine proposto
+        // (per esempio "Da fare" dopo l'agenda), invece di finire in fondo.
+        sortable.forEachIndexed { i, key ->
+            if (key in out) return@forEachIndexed
+            val before = sortable.subList(0, i).lastOrNull { it in out }
+            out.add(if (before == null) 0 else out.indexOf(before) + 1, key)
+        }
+        return out
     }
 
     val labels = linkedMapOf(
@@ -227,6 +236,7 @@ object CardKeys {
         NEWS to "Notizie", SPORT to "La tua squadra", MARKETS to "Mercati",
         OCCASIONS to "Ricorrenze (santi, compleanni, festività)", EXTRAS to "In breve (luna, batteria, sveglia)",
         TOMORROW to "Domani (solo la sera)",
+        TODO to "Da fare (da Notion)",
     )
 }
 
@@ -271,6 +281,12 @@ data class BriefState(
     val travel: List<Travel> = emptyList(),
     /** Tragitti verso il primo impegno di domani, per lo sguardo serale. */
     val tomorrowTravel: List<Travel> = emptyList(),
+    /** Caselle della to-do list di Notion. */
+    val todos: List<Todo> = emptyList(),
+    /** Stato della to-do list: "" se caricata, "unset" se non collegata, altrimenti il motivo dell'errore. */
+    val todoState: String = "unset",
+    /** Titolo della pagina di Notion collegata. */
+    val todoPage: String = "",
     /** Tragitto verso il lavoro per oggi o domani, o null se adesso non serve (o il lavoro non è impostato). */
     val commute: Commute? = null,
     /** Icona di ogni destinazione salvata, per nome: serve alla scheda Spostamenti. */
