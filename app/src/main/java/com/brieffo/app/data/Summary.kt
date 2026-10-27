@@ -110,12 +110,18 @@ object Summary {
         return parts.joinToString(" ").ifEmpty { "Concedi i permessi o imposta una città per ricevere il tuo riepilogo." }
     }
 
-    /** Riscrive il riepilogo con Gemini (piano gratuito di Google AI Studio, chiave dell'utente). */
-    /** Mette in ordine il testo di Gemini: una riga per argomento, senza trattini o righe vuote. */
-    private fun tidy(text: String) = text.lines().map { it.trim().trimStart('-', '•').trim() }.filter { it.isNotEmpty() }.joinToString("\n")
+    /**
+     * Mette in ordine il testo dell'IA: una riga per argomento, senza trattini, asterischi o righe vuote.
+     * Toglie anche il ragionamento che alcuni modelli scrivono tra <think> e </think>, anche se non è ancora chiuso.
+     */
+    private fun tidy(text: String) = text.replace(Regex("(?s)<think>.*?(</think>|$)"), "").replace("*", "")
+        .lines().map { it.trim().trimStart('-', '•').trim() }.filter { it.isNotEmpty() }.joinToString("\n")
 
-    /** [onPartial] riceve il testo man mano che Gemini lo scrive, così può comparire subito sullo schermo. */
-    fun gemini(apiKey: String, s: BriefState, speed: String = "balanced", onPartial: ((String) -> Unit)? = null): String {
+    /**
+     * Riscrive il riepilogo con Cloudflare Workers AI (piano gratuito, account e token dell'utente).
+     * [onPartial] riceve il testo man mano che il modello lo scrive, così può comparire subito sullo schermo.
+     */
+    fun ai(account: String, token: String, s: BriefState, speed: String = "balanced", onPartial: ((String) -> Unit)? = null): String {
         val health = (s.health as? HealthState.Data)?.health
         val usage = (s.usage as? UsageState.Data)?.usage
         val today = java.time.LocalDate.now()
@@ -194,7 +200,7 @@ object Summary {
                 s.onThisDay?.let { appendLine("Accadde oggi nel ${it.year}: ${it.text}") }
             }
         }
-        val prompt = """
+        val instructions = """
             Sei l'assistente di un'app di riepilogo giornaliero. Scrivi in italiano un riepilogo caldo e concreto,
             rivolgendoti all'utente con il tu. Ogni riga è una frase breve su un solo argomento e comincia con una
             emoji adatta all'argomento seguita da uno spazio; vai a capo dopo ogni riga.
@@ -206,18 +212,17 @@ object Summary {
             Metti per prime le cose che contano in questo momento della giornata e dai un consiglio pratico se serve.
             Usa solo i dati forniti, non inventare nulla. Una sola emoji per riga, all'inizio.
             Niente markdown, niente titoli, niente saluti iniziali.
+        """.trimIndent()
 
-            DATI:
-        """.trimIndent() + "\n" + data
-
-        return tidy(ask(apiKey, prompt, speed, onText = onPartial?.let { show -> { partial -> show(tidy(partial)) } }))
+        return tidy(ask(account, token, instructions, "DATI:\n$data", speed, onText = onPartial?.let { show -> { partial -> show(tidy(partial)) } }))
+            .ifEmpty { throw AiException("l'IA ha risposto senza testo") }
     }
 
-    /** Prova la chiave con una domanda minima: restituisce il nome del modello che ha risposto. */
-    fun testKey(apiKey: String, speed: String = "balanced"): String {
+    /** Prova account e token con una domanda minima: restituisce il nome del modello che ha risposto. */
+    fun testKey(account: String, token: String, speed: String = "balanced"): String {
         var model = ""
-        ask(apiKey, "Rispondi soltanto con la parola: ok", speed) { model = it }
-        return model
+        ask(account, token, "Rispondi in italiano, in una parola.", "Rispondi soltanto con la parola: ok", speed) { model = it }
+        return model.substringAfterLast('/')
     }
 
     /** Voci di Gemini proposte nelle impostazioni, con il carattere che Google attribuisce a ciascuna. */
@@ -258,7 +263,7 @@ object Summary {
             .put("input", JSONArray().put(JSONObject().put("type", "user_input").put("content", JSONArray().put(part))))
             .put("response_format", JSONObject().put("type", "audio"))
             .put("generation_config", JSONObject().put("speech_config", JSONArray().put(JSONObject().put("voice", voice))))
-        val r = post("https://generativelanguage.googleapis.com/v1beta/interactions", apiKey, body, model)
+        val r = post(connect("https://generativelanguage.googleapis.com/v1beta/interactions", "x-goog-api-key", apiKey.trim(), body) { code, raw -> geminiError(code, raw, model) })
         val steps = r.optJSONArray("steps")
         var data: String? = null
         for (i in 0 until (steps?.length() ?: 0)) {
@@ -269,7 +274,7 @@ object Summary {
             }
         }
         val audio = data?.let { runCatching { Base64.decode(it, Base64.DEFAULT) }.getOrNull() }
-            ?: throw GeminiException("Gemini ha risposto senza audio", retryOtherModel = true)
+            ?: throw AiException("Gemini ha risposto senza audio", retryOtherModel = true)
         stripWavHeader(audio)
     }
 
@@ -287,90 +292,87 @@ object Summary {
         return audio.copyOfRange(minOf(44, audio.size), audio.size)
     }
 
-    /** Manda [prompt] a Gemini e restituisce il testo della risposta. */
-    private fun ask(apiKey: String, prompt: String, speed: String, onText: ((String) -> Unit)? = null, onModel: (String) -> Unit = {}): String {
-        val plan = SPEEDS[speed] ?: SPEEDS.getValue("balanced")
-        return withModels(plan.map { it.first }) { model ->
-            val thinking = plan.first { it.first == model }.second
-            val text = try {
-                askModel(apiKey, prompt, model, thinking, onText)
-            } catch (e: GeminiException) {
-                // Se il modello di turno non accetta quel livello di ragionamento, si riprova lasciandogli il suo.
-                if (thinking == null || !e.badRequest) throw e
-                askModel(apiKey, prompt, model, null, onText)
+    /**
+     * Manda a Workers AI le [instructions] e il [prompt] e restituisce il testo della risposta.
+     * [onModel] riceve il modello che ha risposto davvero, dopo eventuali tentativi con altri.
+     */
+    private fun ask(account: String, token: String, instructions: String, prompt: String, speed: String, onText: ((String) -> Unit)? = null, onModel: (String) -> Unit = {}): String {
+        val id = account.trim()
+        // L'ID dell'account è fatto di 32 cifre esadecimali: se non lo è, inutile chiamare Cloudflare.
+        if (!id.matches(Regex("[0-9a-fA-F]{32}"))) throw AiException("l'ID account non è valido: sono 32 caratteri tra cifre e lettere da a a f")
+        val url = "https://api.cloudflare.com/client/v4/accounts/$id/ai/v1/chat/completions"
+        return withModels(SPEEDS[speed] ?: SPEEDS.getValue("balanced")) { model ->
+            val body = JSONObject()
+                .put("model", model)
+                .put(
+                    "messages", JSONArray()
+                        .put(JSONObject().put("role", "system").put("content", instructions))
+                        .put(JSONObject().put("role", "user").put("content", prompt)),
+                )
+                .put("temperature", 0.7)
+                .put("max_tokens", 2048)
+                .put("stream", onText != null)
+            val c = connect(url, "Authorization", "Bearer ${token.trim()}", body) { code, raw -> cloudflareError(code, raw, model) }
+            val text = if (onText != null) stream(c, onText) else {
+                val r = post(c)
+                // Risposta nel formato di OpenAI; quella nativa di Workers AI mette il testo in result.response.
+                r.optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.optString("content")
+                    ?: r.optJSONObject("result")?.optString("response").orEmpty()
             }
+            if (tidy(text).isEmpty()) throw AiException("l'IA ha risposto senza testo", retryOtherModel = true)
             onModel(model)
             text
         }
     }
 
-    private fun askModel(apiKey: String, prompt: String, model: String, thinking: String?, onText: ((String) -> Unit)? = null): String {
-        val config = JSONObject().put("temperature", 0.7).put("maxOutputTokens", 4096)
-        if (thinking != null) config.put("thinkingConfig", JSONObject().put("thinkingLevel", thinking))
-        val body = JSONObject()
-            .put("contents", JSONArray().put(JSONObject().put("parts", JSONArray().put(JSONObject().put("text", prompt)))))
-            .put("generationConfig", config)
-        if (onText != null) return stream("https://generativelanguage.googleapis.com/v1beta/models/$model:streamGenerateContent?alt=sse", apiKey, body, model, onText)
-        val r = post("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent", apiKey, body, model)
-        val candidate = r.optJSONArray("candidates")?.optJSONObject(0)
-        val parts = candidate?.optJSONObject("content")?.optJSONArray("parts")
-        val text = (0 until (parts?.length() ?: 0)).map { parts!!.getJSONObject(it) }.filter { !it.optBoolean("thought") }
-            .joinToString("") { it.optString("text") }.replace("*", "").trim()
-        if (text.isEmpty()) {
-            val reason = candidate?.optString("finishReason")?.takeIf { it.isNotBlank() }
-                ?: r.optJSONObject("promptFeedback")?.optString("blockReason")?.takeIf { it.isNotBlank() }
-            throw GeminiException("Gemini ha risposto senza testo", reason?.let { "Motivo: $it" }, retryOtherModel = true)
-        }
-        return text
-    }
-
-    /** Prova i modelli in ordine: se uno non esiste più, è sovraccarico o ha finito la quota gratuita, si passa al successivo. */
+    /** Prova i modelli in ordine: se uno non esiste più, è sovraccarico o rifiuta la richiesta, si passa al successivo. */
     private fun <T> withModels(models: List<String>, call: (String) -> T): T {
-        var last: GeminiException? = null
+        var last: AiException? = null
         for (model in models) {
             try {
                 return call(model)
-            } catch (e: GeminiException) {
+            } catch (e: AiException) {
                 last = e
                 if (!e.retryOtherModel) throw e
             } catch (e: IOException) {
-                throw GeminiException("connessione non riuscita", e.message)
+                throw AiException("connessione non riuscita", e.message)
             } catch (e: IllegalArgumentException) {
                 // Caratteri non ammessi nell'intestazione: la chiave è stata incollata male.
-                throw GeminiException("la chiave contiene caratteri non validi: copiala di nuovo", e.message)
+                throw AiException("la chiave contiene caratteri non validi: copiala di nuovo", e.message)
             }
         }
-        throw last ?: GeminiException("nessun modello disponibile")
+        throw last ?: AiException("nessun modello disponibile")
     }
 
     /**
-     * Come [post], ma la risposta arriva a pezzi mentre il modello scrive: a ogni pezzo [onText] riceve
+     * Legge la risposta che arriva a pezzi mentre il modello scrive: a ogni pezzo [onText] riceve
      * tutto il testo ricevuto fin lì. Restituisce il testo completo.
      */
-    private fun stream(url: String, apiKey: String, body: JSONObject, model: String, onText: (String) -> Unit): String {
-        val c = connect(url, apiKey, body, model)
+    private fun stream(c: HttpURLConnection, onText: (String) -> Unit): String {
         try {
             val all = StringBuilder()
             c.inputStream.bufferedReader().useLines { lines ->
                 for (line in lines) {
                     if (!line.startsWith("data:")) continue
-                    val o = runCatching { JSONObject(line.removePrefix("data:").trim()) }.getOrNull() ?: continue
-                    val parts = o.optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts") ?: continue
-                    val piece = (0 until parts.length()).map { parts.getJSONObject(it) }.filter { !it.optBoolean("thought") }.joinToString("") { it.optString("text") }
+                    val raw = line.removePrefix("data:").trim()
+                    if (raw == "[DONE]") break
+                    val o = runCatching { JSONObject(raw) }.getOrNull() ?: continue
+                    // Il ragionamento dei modelli che pensano arriva a parte (reasoning_content) e resta fuori.
+                    val delta = o.optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("delta")
+                    val piece = if (delta != null) delta.optString("content").takeIf { !delta.isNull("content") }.orEmpty() else o.optString("response")
                     if (piece.isNotEmpty()) {
-                        all.append(piece.replace("*", ""))
+                        all.append(piece)
                         onText(all.toString())
                     }
                 }
             }
-            return all.toString().trim().ifEmpty { throw GeminiException("Gemini ha risposto senza testo", retryOtherModel = true) }
+            return all.toString()
         } finally {
             c.disconnect()
         }
     }
 
-    private fun post(url: String, apiKey: String, body: JSONObject, model: String): JSONObject {
-        val c = connect(url, apiKey, body, model)
+    private fun post(c: HttpURLConnection): JSONObject {
         try {
             return JSONObject(c.inputStream.bufferedReader().use { it.readText() })
         } finally {
@@ -378,8 +380,11 @@ object Summary {
         }
     }
 
-    /** Apre la richiesta e controlla l'esito: se Google rifiuta, l'errore dice perché. Chi chiama chiude la connessione. */
-    private fun connect(url: String, apiKey: String, body: JSONObject, model: String): HttpURLConnection {
+    /**
+     * Apre la richiesta e controlla l'esito: se il servizio rifiuta, [fail] trasforma il codice e il corpo
+     * della risposta in un errore che dice perché. Chi chiama chiude la connessione.
+     */
+    private fun connect(url: String, header: String, value: String, body: JSONObject, fail: (Int, String) -> AiException): HttpURLConnection {
         val c = URL(url).openConnection() as HttpURLConnection
         try {
             c.requestMethod = "POST"
@@ -387,30 +392,11 @@ object Summary {
             c.readTimeout = 45_000
             c.doOutput = true
             c.setRequestProperty("Content-Type", "application/json")
-            c.setRequestProperty("x-goog-api-key", apiKey.trim())
+            c.setRequestProperty(header, value)
             c.outputStream.use { it.write(body.toString().toByteArray()) }
             val code = c.responseCode
-            if (code !in 200..299) {
-                // Google spiega il motivo nel corpo della risposta: senza leggerlo ogni errore sembrerebbe "chiave sbagliata".
-                val err = runCatching {
-                    val raw = c.errorStream.bufferedReader().use { it.readText() }.trim()
-                    (if (raw.startsWith("[")) JSONArray(raw).getJSONObject(0) else JSONObject(raw)).getJSONObject("error")
-                }.getOrNull()
-                val detail = err?.optString("message")?.takeIf { it.isNotBlank() }
-                val status = err?.optString("status").orEmpty()
-                val badKey = detail?.contains("API key", ignoreCase = true) == true
-                throw when {
-                    code == 400 && badKey -> GeminiException("la chiave API non è valida", detail)
-                    code == 400 && status == "FAILED_PRECONDITION" ->
-                        GeminiException("il piano gratuito di Gemini non è disponibile per questa chiave: va attivata la fatturazione su Google AI Studio", detail)
-                    code == 400 -> GeminiException("richiesta rifiutata da Gemini", detail, badRequest = true)
-                    code == 401 || code == 403 -> GeminiException("la chiave non è autorizzata a usare Gemini", detail)
-                    code == 404 -> GeminiException("il modello $model non è disponibile", detail, retryOtherModel = true)
-                    code == 429 -> GeminiException("limite gratuito raggiunto, riprova tra poco", detail, retryOtherModel = true)
-                    code >= 500 -> GeminiException("Gemini è sovraccarico, riprova tra poco", detail, retryOtherModel = true)
-                    else -> GeminiException("errore $code del servizio", detail)
-                }
-            }
+            // Il motivo è nel corpo della risposta: senza leggerlo ogni errore sembrerebbe "chiave sbagliata".
+            if (code !in 200..299) throw fail(code, runCatching { c.errorStream.bufferedReader().use { it.readText() }.trim() }.getOrDefault(""))
             return c
         } catch (e: Throwable) {
             c.disconnect()
@@ -418,31 +404,74 @@ object Summary {
         }
     }
 
+    /** Spiega in italiano un rifiuto di Workers AI. Cloudflare risponde con "errors" o, nel formato di OpenAI, con "error". */
+    private fun cloudflareError(code: Int, raw: String, model: String): AiException {
+        val o = runCatching { JSONObject(raw) }.getOrNull()
+        val detail = (
+            o?.optJSONArray("errors")?.optJSONObject(0)?.optString("message")
+                ?: o?.optJSONObject("error")?.optString("message")
+                ?: o?.optString("error")
+            )?.takeIf { it.isNotBlank() } ?: raw.take(300).takeIf { it.isNotBlank() }
+        val quota = listOf("neuron", "allocation").any { detail?.contains(it, ignoreCase = true) == true }
+        val name = model.substringAfterLast('/')
+        return when {
+            code == 401 || code == 403 -> AiException("il token non è valido o non ha il permesso Workers AI, oppure l'ID account non corrisponde", detail)
+            code == 429 && quota -> AiException("hai finito i neuroni gratuiti di oggi: si ricaricano all'una di notte (alle due con l'ora legale)", detail)
+            code == 429 -> AiException("troppe richieste, riprova tra poco", detail, retryOtherModel = true)
+            code == 404 -> AiException("il modello $name non è disponibile, oppure l'ID account è sbagliato", detail, retryOtherModel = true)
+            code == 400 -> AiException("richiesta rifiutata da Workers AI", detail, retryOtherModel = true)
+            code >= 500 -> AiException("Workers AI è sovraccarico, riprova tra poco", detail, retryOtherModel = true)
+            else -> AiException("errore $code del servizio", detail)
+        }
+    }
+
+    /** Spiega in italiano un rifiuto di Gemini, che resta solo per la voce. */
+    private fun geminiError(code: Int, raw: String, model: String): AiException {
+        val err = runCatching { (if (raw.startsWith("[")) JSONArray(raw).getJSONObject(0) else JSONObject(raw)).getJSONObject("error") }.getOrNull()
+        val detail = err?.optString("message")?.takeIf { it.isNotBlank() }
+        val status = err?.optString("status").orEmpty()
+        val badKey = detail?.contains("API key", ignoreCase = true) == true
+        return when {
+            code == 400 && badKey -> AiException("la chiave API non è valida", detail)
+            code == 400 && status == "FAILED_PRECONDITION" ->
+                AiException("il piano gratuito di Gemini non è disponibile per questa chiave: va attivata la fatturazione su Google AI Studio", detail)
+            code == 400 -> AiException("richiesta rifiutata da Gemini", detail)
+            code == 401 || code == 403 -> AiException("la chiave non è autorizzata a usare Gemini", detail)
+            code == 404 -> AiException("il modello $model non è disponibile", detail, retryOtherModel = true)
+            code == 429 -> AiException("limite gratuito raggiunto, riprova tra poco", detail, retryOtherModel = true)
+            code >= 500 -> AiException("Gemini è sovraccarico, riprova tra poco", detail, retryOtherModel = true)
+            else -> AiException("errore $code del servizio", detail)
+        }
+    }
+
     const val SPEECH_RATE = 24_000
 
-    /** Dal più capace al più leggero: i nomi "latest" seguono da soli le nuove versioni. */
-    private const val FLASH = "gemini-flash-latest"
-    private const val LITE = "gemini-flash-lite-latest"
+    /**
+     * Modelli di Workers AI che scrivono bene in italiano. Il piano gratuito dà 10.000 neuroni al giorno:
+     * un riepilogo ne consuma all'incirca da 25 a 130, a seconda del modello.
+     */
+    private const val MISTRAL = "@cf/mistralai/mistral-small-3.1-24b-instruct"
+    private const val LLAMA = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+    private const val GEMMA = "@cf/google/gemma-4-26b-a4b-it"
 
     /**
-     * Per ogni velocità, i modelli da provare in ordine e quanto farli ragionare prima di scrivere (null = quanto
-     * decide il modello). Il tempo di attesa dipende quasi tutto da questo: il modello leggero che non ragiona
-     * risponde in un paio di secondi, quello completo che ragiona può metterci molto di più.
+     * Per ogni velocità, i modelli da provare in ordine. Il tempo di attesa dipende quasi tutto da questo:
+     * quelli che scrivono subito rispondono in pochi secondi, quello che ragiona prima ci mette di più.
      */
     private val SPEEDS = mapOf(
-        "fast" to listOf(LITE to null, FLASH to "low"),
-        "balanced" to listOf(FLASH to "low", LITE to null),
-        "careful" to listOf(FLASH to null, LITE to null),
+        "fast" to listOf(MISTRAL, LLAMA),
+        "balanced" to listOf(LLAMA, MISTRAL),
+        "careful" to listOf(GEMMA, LLAMA, MISTRAL),
     )
 
     /** Velocità proposte nelle impostazioni: chiave, nome e che cosa comporta. */
     val SPEED_CHOICES = listOf(
-        Triple("fast", "Veloce", "Il modello più leggero: risponde in pochi secondi, con un testo un po' più semplice."),
-        Triple("balanced", "Bilanciato", "Il modello completo con poco ragionamento: buon testo senza attese lunghe."),
-        Triple("careful", "Curato", "Il modello completo che ragiona quanto vuole: il testo migliore, ma può metterci parecchio."),
+        Triple("fast", "Veloce", "Mistral Small: risponde in pochi secondi, con un testo un po' più semplice."),
+        Triple("balanced", "Bilanciato", "Llama 3.3 70B: il modello più grande, buon testo senza attese lunghe."),
+        Triple("careful", "Curato", "Gemma 4, che ragiona prima di scrivere: il testo più curato, ma può metterci di più."),
     )
     private val SPEECH_MODELS = listOf("gemini-3.8-flash-tts", "gemini-3.8-flash-lite-tts")
 }
 
-/** Errore di Gemini: [message] è la spiegazione breve in italiano, [detail] quello che ha risposto Google. */
-class GeminiException(message: String, val detail: String? = null, val retryOtherModel: Boolean = false, val badRequest: Boolean = false) : Exception(message)
+/** Errore dell'IA: [message] è la spiegazione breve in italiano, [detail] quello che ha risposto il servizio. */
+class AiException(message: String, val detail: String? = null, val retryOtherModel: Boolean = false) : Exception(message)

@@ -18,9 +18,22 @@ class Prefs(ctx: Context) {
         get() = sp.getString("city", "") ?: ""
         set(v) = sp.edit { putString("city", v.trim()) }
 
+    /** Chiave di Google AI Studio: serve solo per la voce di Gemini. */
     var geminiKey: String
         get() = sp.getString("geminiKey", "") ?: ""
         set(v) = sp.edit { putString("geminiKey", v.trim()) }
+
+    /** ID dell'account Cloudflare e token con il permesso Workers AI: insieme fanno scrivere il riepilogo all'IA. */
+    var cloudflareAccount: String
+        get() = sp.getString("cloudflareAccount", "") ?: ""
+        set(v) = sp.edit { putString("cloudflareAccount", v.trim()) }
+
+    var cloudflareToken: String
+        get() = sp.getString("cloudflareToken", "") ?: ""
+        set(v) = sp.edit { putString("cloudflareToken", v.trim()) }
+
+    /** Vero se account e token di Cloudflare ci sono entrambi. */
+    val aiReady: Boolean get() = cloudflareAccount.isNotBlank() && cloudflareToken.isNotBlank()
 
     var stepGoal: Int
         get() = sp.getInt("stepGoal", 8000)
@@ -134,12 +147,12 @@ class Prefs(ctx: Context) {
         get() = sp.getBoolean("railRight", false)
         set(v) = sp.edit { putBoolean("railRight", v) }
 
-    /** Quanto in fretta deve scrivere Gemini: "fast", "balanced" oppure "careful" (vedi Summary.SPEED_CHOICES). */
+    /** Quanto in fretta deve scrivere l'IA:"fast", "balanced" oppure "careful" (vedi Summary.SPEED_CHOICES). */
     var aiSpeed: String
         get() = sp.getString("aiSpeed", "balanced") ?: "balanced"
         set(v) = sp.edit { putString("aiSpeed", v) }
 
-    /** Vero se il riepilogo di Gemini parte chiuso, con solo le prime righe in vista. */
+    /** Vero se il riepilogo dell'IA parte chiuso, con solo le prime righe in vista. */
     var summaryCollapsed: Boolean
         get() = sp.getBoolean("summaryCollapsed", false)
         set(v) = sp.edit { putBoolean("summaryCollapsed", v) }
@@ -154,7 +167,7 @@ class Prefs(ctx: Context) {
         get() = LocalVoice.voice(sp.getString("localVoice", "") ?: "").id
         set(v) = sp.edit { putString("localVoice", v) }
 
-    /** Ultimo riepilogo scritto da Gemini e quando (millisecondi): si riusa finché è recente, per non consumare richieste. */
+    /** Ultimo riepilogo scritto dall'IA e quando (millisecondi): si riusa finché è recente, per non consumare richieste. */
     var aiSummary: String
         get() = sp.getString("aiSummary", "") ?: ""
         set(v) = sp.edit { putString("aiSummary", v).putLong("aiSummaryAt", System.currentTimeMillis()) }
@@ -338,7 +351,7 @@ class Prefs(ctx: Context) {
 
     private companion object {
         const val BACKUP_APP = "brieffo"
-        val BACKUP_STRINGS = setOf("name", "city", "geminiKey", "feeds", "themeMode", "team", "teamRef", "workAddress", "workPoint", "places", "travelModes", "travelMode", "cardOrder", "speechVoice", "speechEngine", "localVoice", "aiSpeed", "notionToken", "notionPageId", "notionPageTitle")
+        val BACKUP_STRINGS = setOf("name", "city", "geminiKey", "cloudflareAccount", "cloudflareToken", "feeds", "themeMode", "team", "teamRef", "workAddress", "workPoint", "places", "travelModes", "travelMode", "cardOrder", "speechVoice", "speechEngine", "localVoice", "aiSpeed", "notionToken", "notionPageId", "notionPageTitle")
         val BACKUP_INTS = setOf("stepGoal", "notifyHour", "notifyMinute", "accent", "speechSpeed")
         val BACKUP_BOOLEANS = setOf("notifyEnabled", "summaryCollapsed", "railRight", "weatherAnimated", "leaveAlerts", "liveAlerts")
         val BACKUP_SETS = setOf("hidden")

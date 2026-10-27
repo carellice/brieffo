@@ -392,8 +392,8 @@ class WidgetWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx
             val events = if (origin != null && base.today.any { it.location.isNotBlank() }) TravelRepo.load(prefs, origin, base.today, skipWork = true) else emptyList()
             LeaveReminder.plan(ctx, events.filter { it.leaveBy != null } + (commute?.rides ?: emptyList()))
         }
-        // Il riepilogo di Gemini resta quello dell'ultima apertura finché è recente: qui non si chiama l'IA.
-        val ai = prefs.aiSummary.takeIf { prefs.geminiKey.isNotBlank() && it.isNotBlank() && System.currentTimeMillis() - prefs.aiSummaryAt < 4 * 60 * 60 * 1000L }
+        // Il riepilogo dell'IA resta quello dell'ultima apertura finché è recente: qui non si chiama l'IA.
+        val ai = prefs.aiSummary.takeIf { prefs.aiReady && it.isNotBlank() && System.currentTimeMillis() - prefs.aiSummaryAt < 4 * 60 * 60 * 1000L }
         WidgetStore.update(ctx, state.copy(summary = ai ?: Summary.rules(state)))
         Result.success()
     }

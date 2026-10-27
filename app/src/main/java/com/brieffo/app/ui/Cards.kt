@@ -143,7 +143,7 @@ internal fun ActionButton(text: String, onClick: () -> Unit) {
 }
 
 /**
- * Segnaposto mostrato mentre Gemini scrive: le righe si riempiono una dopo l'altra, da sinistra a destra,
+ * Segnaposto mostrato mentre l'IA scrive: le righe si riempiono una dopo l'altra, da sinistra a destra,
  * con un cursore in punta, come un testo che viene battuto; poi si ricomincia.
  */
 @Composable
@@ -174,10 +174,10 @@ private fun SummarySkeleton() {
     }
 }
 
-/** Quante righe del riepilogo di Gemini restano visibili quando è chiuso. */
+/** Quante righe del riepilogo dell'IA restano visibili quando è chiuso. */
 private const val SUMMARY_PREVIEW = 2
 
-/** Una riga del riepilogo di Gemini: l'emoji con cui comincia diventa l'icona a sinistra. */
+/** Una riga del riepilogo dell'IA: l'emoji con cui comincia diventa l'icona a sinistra. */
 @Composable
 private fun SummaryLine(line: String) {
     val head = line.substringBefore(' ')
@@ -193,18 +193,18 @@ fun SummaryCard(s: BriefState) {
     val p = LocalPalette.current
     BriefCard(
         title = when {
-            s.summaryLoading -> "Riepilogo · Gemini sta scrivendo…"
-            s.summaryByAi -> "Riepilogo · scritto da Gemini"
+            s.summaryLoading -> "Riepilogo · l'IA sta scrivendo…"
+            s.summaryByAi -> "Riepilogo · scritto dall'IA"
             else -> "Riepilogo"
         },
         icon = Icons.Rounded.AutoAwesome,
     ) {
-        // Finché Gemini scrive si vede sempre il segnaposto animato, anche se c'era già un riepilogo.
+        // Finché l'IA scrive si vede sempre il segnaposto animato, anche se c'era già un riepilogo.
         val streaming = s.summaryLoading && s.summaryPartial.isNotBlank()
         val skeleton = s.summaryLoading && !streaming
         when {
             skeleton -> SummarySkeleton()
-            // Gemini ha cominciato a rispondere: le righe compaiono man mano che arrivano.
+            // L'IA ha cominciato a rispondere: le righe compaiono man mano che arrivano.
             streaming -> Column(Modifier.animateContentSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 s.summaryPartial.lines().filter { it.isNotBlank() }.forEach { SummaryLine(it) }
             }
@@ -245,7 +245,7 @@ fun SummaryCard(s: BriefState) {
             )
         }
         if (s.aiError != null && !skeleton) {
-            Text("Gemini non ha risposto (${s.aiError}): questo è il riepilogo dell'app.", fontSize = 12.sp, color = p.sub, modifier = Modifier.padding(top = 10.dp))
+            Text("L'IA non ha risposto (${s.aiError}): questo è il riepilogo dell'app.", fontSize = 12.sp, color = p.sub, modifier = Modifier.padding(top = 10.dp))
         }
         if (!s.summaryLoading && s.summary.isNotEmpty()) {
             val speaker = rememberSpeaker()

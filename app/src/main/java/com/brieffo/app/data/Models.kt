@@ -248,11 +248,11 @@ data class BriefState(
     val stepGoal: Int = 8000,
     val summary: String = "",
     val summaryByAi: Boolean = false,
-    /** Vero mentre Gemini sta scrivendo il riepilogo. */
+    /** Vero mentre l'IA sta scrivendo il riepilogo. */
     val summaryLoading: Boolean = false,
-    /** Il testo che Gemini ha scritto finora, mentre sta ancora scrivendo; vuoto prima e dopo. */
+    /** Il testo che l'IA ha scritto finora, mentre sta ancora scrivendo; vuoto prima e dopo. */
     val summaryPartial: String = "",
-    /** Vero se il riepilogo di Gemini va mostrato chiuso finché l'utente non lo apre. */
+    /** Vero se il riepilogo dell'IA va mostrato chiuso finché l'utente non lo apre. */
     val summaryCollapsed: Boolean = false,
     /** Vero se l'icona e la scheda del meteo si muovono secondo il tempo che fa. */
     val weatherAnimated: Boolean = true,

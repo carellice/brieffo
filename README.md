@@ -47,7 +47,7 @@ Anche i colori seguono l'ora: chiari e caldi al mattino, scuri e profondi la ser
 
 | Scheda | Cosa mostra |
 | --- | --- |
-| **Riepilogo** | Due o tre frasi sulla tua giornata. Composte dall'app oppure, se vuoi, scritte da Gemini. |
+| **Riepilogo** | Due o tre frasi sulla tua giornata. Composte dall'app oppure, se vuoi, scritte dall'IA di Cloudflare Workers AI. |
 | **Meteo** | Condizioni attuali, prossime ore e 7 giorni. Pioggia, vento, umidità, UV, qualità dell'aria, alba e tramonto. |
 | **Allerte meteo** | Allerte gialle, arancioni e rosse per la tua regione (solo Italia). |
 | **Pollini** | Graminacee, betulla, ontano, olivo, artemisia e ambrosia, quando presenti. |
@@ -71,7 +71,7 @@ della giornata oppure, se preferisci, lo decidi tu dalle impostazioni.
 - **Presentazione guidata** al primo avvio: nome, città, permessi, schede, squadra e notifica in sette passi, tutti facoltativi.
 - **Calendari a scelta**: accendi solo quelli che vuoi vedere, compresi quelli che Android non scarica da solo, e forza la sincronizzazione quando vuoi con *Sincronizza ora*.
 - **Indice laterale**: i puntini sul bordo (sinistro o destro, a scelta) mostrano a che punto sei; appoggia il dito e diventano una colonna di icone, tocca o scorri per saltare da una scheda all'altra.
-- **Riepilogo richiudibile**: quello scritto da Gemini si apre e si chiude con un tocco, e può partire già chiuso.
+- **Riepilogo richiudibile**: quello scritto dall'IA si apre e si chiude con un tocco, e può partire già chiuso.
 - **Ordine delle schede**: lo decidi tu dalle impostazioni, una scheda alla volta.
 - **Indirizzo sulla mappa**: l'indirizzo del lavoro si cerca con i suggerimenti e si conferma su una mappa di OpenStreetMap, gratuita e senza account.
 - **Ricerca della squadra** con campionato, per non confondere due squadre con lo stesso nome.
@@ -81,7 +81,7 @@ della giornata oppure, se preferisci, lo decidi tu dalle impostazioni.
 - **Casa, lavoro, scuola, palestra e luoghi tuoi**: oltre alle quattro fisse puoi aggiungere luoghi con nome e icona a scelta, tutti con l'indirizzo confermato sulla mappa; il brief mostra i tempi verso tutti, tranne quello in cui ti trovi, con ogni mezzo che hai scelto (anche nel riepilogo).
 - **Tragitto per il lavoro**: la sera (e la mattina prima di entrare) Brieffo ti chiede a che ora entri e ti dice, per ogni mezzo scelto, quanto ci metti e quando uscire, partendo da dove sei.
 - **Promemoria della partita**: un tocco sulla prossima gara e ricevi una notifica 30 minuti prima dell'inizio.
-- **Riepilogo da ascoltare**: un tocco su *Ascolta* e te lo legge una voce che gira tutta sul telefono, gratuita e senza limiti (si scarica una volta, circa 64 MB). In alternativa una voce di Gemini o quella di Android; velocità e voce a scelta.
+- **Riepilogo da ascoltare**: un tocco su *Ascolta* e te lo legge una voce che gira tutta sul telefono, gratuita e senza limiti (si scarica una volta, circa 64 MB). In alternativa una voce di Gemini (con una chiave gratuita di Google AI Studio) o quella di Android; velocità e voce a scelta.
 - **Aggiornamento misurato**: il brief si ricarica da solo ogni quattro ore; quando vuoi dati freschi, trascina verso il basso.
 - **Widget per la Home**: la mia giornata (meteo, impegno e partita insieme), prossima partita, meteo, agenda e riepilogo, da aggiungere dalle impostazioni o dal menu dei widget di Android.
 - **Backup della configurazione**: esporta tutto in un file e importalo sul telefono nuovo, oppure scegli una cartella e il backup si aggiorna da solo.
@@ -93,8 +93,9 @@ della giornata oppure, se preferisci, lo decidi tu dalle impostazioni.
 
 Il riepilogo funziona da subito, senza rete e senza chiavi: lo compone l'app.
 
-Se preferisci un testo più naturale, puoi collegare **Gemini** con una chiave gratuita di Google
-AI Studio. La guida passo passo è nelle impostazioni, alla voce *Riepilogo con IA*.
+Se preferisci un testo più naturale, puoi collegare **Cloudflare Workers AI** con un account gratuito:
+bastano l'ID dell'account e un token API. Il piano gratuito (10.000 neuroni al giorno) copre molti riepiloghi
+al giorno. La guida passo passo è nelle impostazioni, alla voce *Riepilogo con IA*.
 
 ## I tuoi dati
 
@@ -104,9 +105,10 @@ AI Studio. La guida passo passo è nelle impostazioni, alla voce *Riepilogo con 
   (preciso solo se lo consenti) e la destinazione vengono inviati ai servizi che calcolano il percorso: OpenStreetMap per auto, bici e piedi, Transitous per i mezzi pubblici.
 - **Sola lettura**: Brieffo non crea né modifica eventi, e non scrive dati di salute. L'unica cosa che modifica è la casella di Notion che spunti tu.
 - **Notion**: la chiave dell'integrazione resta sul telefono e Brieffo vede solo le pagine che condividi con l'integrazione.
-- **Con Gemini attivo** i dati delle schede accese (meteo, impegni con luogo, spostamenti, attività,
-  app più usate, cose da fare, squadra, titoli delle notizie, mercati, nomi dei compleanni) vengono inviati a Google
-  per scrivere il riepilogo. Le schede spente restano fuori; senza chiave non viene inviato nulla.
+- **Con Workers AI attivo** i dati delle schede accese (meteo, impegni con luogo, spostamenti, attività,
+  app più usate, cose da fare, squadra, titoli delle notizie, mercati, nomi dei compleanni) vengono inviati a Cloudflare
+  per scrivere il riepilogo. Le schede spente restano fuori; senza collegamento non viene inviato nulla.
+- **Con la voce di Gemini** solo il testo del riepilogo viene inviato a Google per leggerlo ad alta voce.
 
 ### Permessi
 

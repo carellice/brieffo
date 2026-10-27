@@ -107,7 +107,7 @@ import com.brieffo.app.data.CalendarInfo
 import com.brieffo.app.data.CalendarRepo
 import com.brieffo.app.data.CardKeys
 import com.brieffo.app.data.Feed
-import com.brieffo.app.data.GeminiException
+import com.brieffo.app.data.AiException
 import com.brieffo.app.data.LocalVoice
 import com.brieffo.app.data.NotionPage
 import com.brieffo.app.data.NotionRepo
@@ -366,6 +366,8 @@ fun SettingsScreen(
     var testSent by remember { mutableStateOf(false) }
     val time = rememberTimePickerState(prefs.notifyHour, prefs.notifyMinute, is24Hour = true)
     var key by remember { mutableStateOf(prefs.geminiKey) }
+    var cfAccount by remember { mutableStateOf(prefs.cloudflareAccount) }
+    var cfToken by remember { mutableStateOf(prefs.cloudflareToken) }
     var collapsed by remember { mutableStateOf(prefs.summaryCollapsed) }
     var notionToken by remember { mutableStateOf(prefs.notionToken) }
     var notionPage by remember { mutableStateOf(prefs.notionPageId) }
@@ -420,6 +422,8 @@ fun SettingsScreen(
         prefs.notifyHour = time.hour
         prefs.notifyMinute = time.minute
         prefs.geminiKey = key
+        prefs.cloudflareAccount = cfAccount
+        prefs.cloudflareToken = cfToken
         prefs.summaryCollapsed = collapsed
         prefs.notionToken = notionToken
         prefs.notionPageId = notionPage
@@ -438,7 +442,7 @@ fun SettingsScreen(
             // Prima si scrivono le modifiche ancora aperte in questa pagina, così il file le contiene.
             save()
             val ok = runCatching { context.contentResolver.openOutputStream(uri)!!.use { it.write(prefs.export().toByteArray()) } }.isSuccess
-            backupMessage = if (ok) "Configurazione esportata. Il file contiene anche le chiavi di Gemini e di Notion: non condividerlo." else "Non sono riuscito a scrivere il file."
+            backupMessage = if (ok) "Configurazione esportata. Il file contiene anche le chiavi di Cloudflare, Gemini e Notion: non condividerlo." else "Non sono riuscito a scrivere il file."
         }
     }
     val importBackup = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -460,6 +464,8 @@ fun SettingsScreen(
                 time.hour = prefs.notifyHour
                 time.minute = prefs.notifyMinute
                 key = prefs.geminiKey
+                cfAccount = prefs.cloudflareAccount
+                cfToken = prefs.cloudflareToken
                 collapsed = prefs.summaryCollapsed
                 notionToken = prefs.notionToken
                 notionPage = prefs.notionPageId
@@ -736,6 +742,11 @@ fun SettingsScreen(
                             )
                         }
                     }
+                    Spacer(Modifier.height(8.dp))
+                    Field(key, { key = it }, "Chiave API Gemini", secret = true)
+                    OutlinedButton(onClick = { onOpenLink("https://aistudio.google.com/apikey") }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                        Text("Crea la chiave su Google AI Studio", color = p.accent)
+                    }
                 }
             }
             val localReady = remember(voicesVersion) { LocalVoice.installed(context) }
@@ -1001,20 +1012,21 @@ fun SettingsScreen(
             }
         }
 
-        SettingsSection("Riepilogo con IA", Icons.Rounded.AutoAwesome, if (key.isBlank()) "Scritto dall'app" else "Scritto da Gemini", "Riepilogo con IA" in openSections, { openSections = if ("Riepilogo con IA" in openSections) openSections - "Riepilogo con IA" else openSections + "Riepilogo con IA" }) {
+        val aiReady = cfAccount.isNotBlank() && cfToken.isNotBlank()
+        SettingsSection("Riepilogo con IA", Icons.Rounded.AutoAwesome, if (aiReady) "Scritto da Workers AI" else "Scritto dall'app", "Riepilogo con IA" in openSections, { openSections = if ("Riepilogo con IA" in openSections) openSections - "Riepilogo con IA" else openSections + "Riepilogo con IA" }) {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Note("Con una chiave API di Google il riepilogo viene scritto da Gemini. È gratuita e non serve la carta di credito.")
+                Note("Con un account Cloudflare il riepilogo viene scritto da Workers AI. Il piano gratuito basta per molti riepiloghi al giorno e non serve la carta di credito.")
                 Column(
                     Modifier.fillMaxWidth().background(p.text.copy(alpha = 0.06f), RoundedCornerShape(18.dp)).padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    Text("Come ottenere la chiave", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    Text("Come ottenere ID account e token", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                     listOf(
-                        "Tocca il pulsante qui sotto per aprire Google AI Studio.",
-                        "Accedi con il tuo account Google e, se richiesto, accetta i termini.",
-                        "Tocca \"Crea chiave API\" (Create API key) e conferma.",
-                        "Copia la chiave che compare.",
-                        "Torna in Brieffo e incollala nel campo qui sotto.",
+                        "Tocca il pulsante qui sotto e accedi a Cloudflare, oppure crea un account gratuito con la tua email.",
+                        "Si apre la pagina di Workers AI: tocca \"Usa l'API REST\" (Use REST API).",
+                        "Copia l'ID account (Account ID) e incollalo nel primo campo qui sotto.",
+                        "Tocca \"Crea un token API di Workers AI\" (Create a Workers AI API Token), poi conferma con \"Crea token API\".",
+                        "Copia il token che compare, perché non verrà più mostrato, e incollalo nel secondo campo.",
                     ).forEachIndexed { i, step ->
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             Text(
@@ -1024,8 +1036,8 @@ fun SettingsScreen(
                             Text(step, fontSize = 14.sp, lineHeight = 19.sp, modifier = Modifier.weight(1f))
                         }
                     }
-                    OutlinedButton(onClick = { onOpenLink("https://aistudio.google.com/apikey") }, modifier = Modifier.fillMaxWidth()) {
-                        Text("Apri Google AI Studio", color = p.accent)
+                    OutlinedButton(onClick = { onOpenLink("https://dash.cloudflare.com/?to=/:account/ai/workers-ai") }, modifier = Modifier.fillMaxWidth()) {
+                        Text("Apri Cloudflare", color = p.accent)
                     }
                 }
                 Column {
@@ -1035,10 +1047,11 @@ fun SettingsScreen(
                             FilterChip(selected = aiSpeed == value, onClick = { aiSpeed = value; keyTest = null }, label = { Text(label) })
                         }
                     }
-                    Note(Summary.SPEED_CHOICES.first { it.first == aiSpeed }.third + " \"Prova la chiave\" qui sotto usa la velocità scelta e ti dice quanto ci ha messo.")
+                    Note(Summary.SPEED_CHOICES.first { it.first == aiSpeed }.third + " \"Prova il collegamento\" qui sotto usa la velocità scelta e ti dice quanto ci ha messo.")
                 }
                 ToggleRow("Riepilogo chiuso all'apertura", collapsed, detail = "Mostra le prime due righe: il resto si apre con un tocco") { collapsed = it }
-                Field(key, { key = it; keyTest = null }, "Chiave API Gemini (facoltativa)", secret = true)
+                Field(cfAccount, { cfAccount = it; keyTest = null }, "ID account Cloudflare (facoltativo)")
+                Field(cfToken, { cfToken = it; keyTest = null }, "Token API Workers AI (facoltativo)", secret = true)
                 OutlinedButton(
                     onClick = {
                         testingKey = true
@@ -1047,29 +1060,29 @@ fun SettingsScreen(
                             keyTest = withContext(Dispatchers.IO) {
                                 runCatching {
                                     val start = System.currentTimeMillis()
-                                    val model = Summary.testKey(key, aiSpeed)
-                                    "La chiave funziona: ha risposto $model in %.1f secondi.".format((System.currentTimeMillis() - start) / 1000f)
+                                    val model = Summary.testKey(cfAccount, cfToken, aiSpeed)
+                                    "Funziona: ha risposto $model in %.1f secondi.".format((System.currentTimeMillis() - start) / 1000f)
                                 }.getOrElse { e ->
-                                    val detail = (e as? GeminiException)?.detail?.let { "\nRisposta di Google: $it" }.orEmpty()
-                                    "La chiave non funziona: ${e.message ?: "errore sconosciuto"}.$detail"
+                                    val detail = (e as? AiException)?.detail?.let { "\nRisposta di Cloudflare: $it" }.orEmpty()
+                                    "Non funziona: ${e.message ?: "errore sconosciuto"}.$detail"
                                 }
                             }
                             testingKey = false
                         }
                     },
-                    enabled = key.isNotBlank() && !testingKey,
+                    enabled = aiReady && !testingKey,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     if (testingKey) {
                         CircularProgressIndicator(Modifier.size(16.dp), color = p.accent, strokeWidth = 2.dp)
                         Spacer(Modifier.width(10.dp))
                     }
-                    Text(if (testingKey) "Chiedo a Gemini…" else "Prova la chiave", color = if (key.isNotBlank()) p.accent else p.sub)
+                    Text(if (testingKey) "Chiedo a Workers AI…" else "Prova il collegamento", color = if (aiReady) p.accent else p.sub)
                 }
                 keyTest?.let { Text(it, fontSize = 13.sp, lineHeight = 18.sp) }
                 Note(
-                    "Con la chiave attiva, i dati di tutte le schede accese (compresi impegni, app più usate e nomi dei compleanni) vengono inviati a Google per generare il testo, al massimo ogni quattro ore o quando aggiorni tu. " +
-                        "Senza chiave tutto resta sul telefono e il riepilogo è composto dall'app. La chiave è salvata solo su questo dispositivo."
+                    "Con il collegamento attivo, i dati di tutte le schede accese (compresi impegni, app più usate e nomi dei compleanni) vengono inviati a Cloudflare per generare il testo, al massimo ogni quattro ore o quando aggiorni tu. " +
+                        "Senza collegamento tutto resta sul telefono e il riepilogo è composto dall'app. ID e token sono salvati solo su questo dispositivo."
                 )
             }
         }

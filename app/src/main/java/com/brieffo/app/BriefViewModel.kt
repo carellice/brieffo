@@ -62,7 +62,7 @@ class BriefViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * Ricarica i dati del brief. Il riepilogo di Gemini viene riscritto solo se quello salvato è più vecchio
+     * Ricarica i dati del brief. Il riepilogo dell'IA viene riscritto solo se quello salvato è più vecchio
      * di [MAX_AGE] oppure se lo chiede l'utente trascinando verso il basso ([forceAi]): così le richieste non si accumulano.
      */
     fun refresh(forceAi: Boolean = false) {
@@ -71,11 +71,13 @@ class BriefViewModel(app: Application) : AndroidViewModel(app) {
         job = viewModelScope.launch {
             val app = getApplication<Application>()
             val now = LocalDateTime.now()
-            val key = prefs.geminiKey
+            val account = prefs.cloudflareAccount
+            val token = prefs.cloudflareToken
+            val aiReady = prefs.aiReady
             val savedAi = prefs.aiSummary.takeIf { !forceAi && it.isNotBlank() && System.currentTimeMillis() - prefs.aiSummaryAt < MAX_AGE }
             _state.update {
                 it.copy(
-                    loading = true, summaryLoading = key.isNotBlank() && savedAi == null, summaryPartial = "", now = now, daypart = Daypart.of(now.hour),
+                    loading = true, summaryLoading = aiReady && savedAi == null, summaryPartial = "", now = now, daypart = Daypart.of(now.hour),
                     name = prefs.name, stepGoal = prefs.stepGoal,
                     calendarGranted = CalendarRepo.granted(app),
                     moon = DeviceRepo.moon(), battery = DeviceRepo.battery(app),
@@ -196,16 +198,16 @@ class BriefViewModel(app: Application) : AndroidViewModel(app) {
                     _state.update { it.copy(occasions = o) }
                 }
             }
-            if (key.isBlank()) {
+            if (!aiReady) {
                 _state.update { it.copy(loading = false, summary = Summary.rules(it), summaryByAi = false, summaryLoading = false, aiError = null) }
             } else if (savedAi != null) {
                 _state.update { it.copy(loading = false, summary = savedAi, summaryByAi = true, summaryLoading = false, aiError = null) }
             } else {
-                // Il riepilogo dell'app resta di riserva: finché Gemini scrive, la scheda mostra il caricamento.
+                // Il riepilogo dell'app resta di riserva: finché l'IA scrive, la scheda mostra il caricamento.
                 _state.update { it.copy(loading = false, aiError = null) }
                 val snapshot = _state.value
-                // Il testo compare riga per riga mentre Gemini lo scrive.
-                runCatching { withContext(Dispatchers.IO) { Summary.gemini(key, snapshot, prefs.aiSpeed) { partial -> _state.update { it.copy(summaryPartial = partial) } } } }
+                // Il testo compare riga per riga mentre l'IA lo scrive.
+                runCatching { withContext(Dispatchers.IO) { Summary.ai(account, token, snapshot, prefs.aiSpeed) { partial -> _state.update { it.copy(summaryPartial = partial) } } } }
                     .onSuccess { text ->
                         prefs.aiSummary = text
                         _state.update { it.copy(summary = text, summaryByAi = true, summaryLoading = false, summaryPartial = "") }
@@ -247,7 +249,7 @@ class BriefViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private companion object {
-        /** Ogni quanto il brief, e con lui il riepilogo di Gemini, si aggiorna da solo: quattro ore. */
+        /** Ogni quanto il brief, e con lui il riepilogo dell'IA, si aggiorna da solo: quattro ore. */
         const val MAX_AGE = 4 * 60 * 60 * 1000L
     }
 }
