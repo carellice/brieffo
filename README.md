@@ -144,18 +144,22 @@ se su GitHub è uscita una versione nuova e, con un tocco, la scarica e la insta
 
 ## Compilare da sé
 
-Serve [Android Studio](https://developer.android.com/studio) installato su un Mac.
+Serve [Android Studio](https://developer.android.com/studio) (o almeno l'SDK di Android e Java 17 o più recente) installato su un PC Windows.
 
 | Script | Cosa fa |
 | --- | --- |
-| `Genera APK.command` | Doppio click: aumenta la versione, compila `Brieffo.apk` e lo pubblica come release su GitHub (richiede [GitHub CLI](https://cli.github.com)), cancellando le release precedenti |
-| `Installa sul telefono.command` | Doppio click: compila e installa sul telefono collegato via USB con Debug USB attivo |
+| `Genera APK.bat` | Doppio click: aumenta la versione, compila `Brieffo.apk` e lo pubblica come release su GitHub (richiede [GitHub CLI](https://cli.github.com)), cancellando le release precedenti |
+| `Installa sul telefono.bat` | Doppio click: compila e installa sul telefono collegato via USB con Debug USB attivo |
 
 In alternativa, da terminale:
 
 ```bash
-./gradlew :app:assembleRelease
+gradlew.bat :app:assembleRelease
 ```
+
+L'APK di rilascio è firmato con una chiave che non sta nel repository: il file `keystore.properties`
+(escluso da git) dice dov'è il file `.jks` e con che password si apre. Tieni una copia di entrambi in un posto
+sicuro: senza la stessa chiave, una nuova versione non si installa sopra quella già presente sul telefono.
 
 L'app è scritta in Kotlin con Jetpack Compose.
 

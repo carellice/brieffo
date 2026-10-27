@@ -4,6 +4,11 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+// La chiave di rilascio sta fuori dal progetto: keystore.properties (escluso da git) dice dov'è e con che password si apre.
+// Senza quel file si firma con la chiave di debug, che però cambia da computer a computer.
+val releaseKey = rootProject.file("keystore.properties").takeIf { it.exists() }
+    ?.let { f -> java.util.Properties().apply { f.inputStream().use { load(it) } } }
+
 android {
     namespace = "com.brieffo.app"
     compileSdk = 36
@@ -18,12 +23,21 @@ android {
         versionName = "1.20"
     }
 
+    signingConfigs {
+        if (releaseKey != null) create("release") {
+            storeFile = file(releaseKey.getProperty("storeFile"))
+            storePassword = releaseKey.getProperty("storePassword")
+            keyAlias = releaseKey.getProperty("keyAlias")
+            keyPassword = releaseKey.getProperty("keyPassword")
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
     compileOptions {
