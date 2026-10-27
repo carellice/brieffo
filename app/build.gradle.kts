@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -7,7 +9,7 @@ plugins {
 // La chiave di rilascio sta fuori dal progetto: keystore.properties (escluso da git) dice dov'è e con che password si apre.
 // Senza quel file si firma con la chiave di debug, che però cambia da computer a computer.
 val releaseKey = rootProject.file("keystore.properties").takeIf { it.exists() }
-    ?.let { f -> java.util.Properties().apply { f.inputStream().use { load(it) } } }
+    ?.let { f -> Properties().apply { f.inputStream().use { load(it) } } }
 
 android {
     namespace = "com.brieffo.app"
@@ -19,8 +21,8 @@ android {
         targetSdk = 36
         // La voce locale porta con sé librerie native pesanti: si includono solo quelle dei telefoni attuali.
         ndk { abiFilters += "arm64-v8a" }
-        versionCode = 21
-        versionName = "1.20"
+        versionCode = 22
+        versionName = "1.21"
     }
 
     signingConfigs {
