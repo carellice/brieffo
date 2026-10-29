@@ -21,8 +21,8 @@ android {
         targetSdk = 36
         // La voce locale porta con sé librerie native pesanti: si includono solo quelle dei telefoni attuali.
         ndk { abiFilters += "arm64-v8a" }
-        versionCode = 22
-        versionName = "1.21"
+        versionCode = 23
+        versionName = "1.22"
     }
 
     signingConfigs {
