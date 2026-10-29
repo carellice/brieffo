@@ -29,7 +29,7 @@ object Summary {
         val health = (s.health as? HealthState.Data)?.health
         val usage = (s.usage as? UsageState.Data)?.usage
 
-        if (w != null) {
+        if (w != null && s.shows(CardKeys.WEATHER)) {
             val day = if (evening) w.tomorrow else w.today
             if (day != null) {
                 val whenText = if (evening) "Domani" else "Oggi"
@@ -44,22 +44,20 @@ object Summary {
             }
         }
 
-        s.alerts.firstOrNull()?.let { parts += "Attenzione: allerta ${it.color} per ${it.type.lowercase()} nella tua zona" + (it.from?.let { f -> if (f.toLocalDate() == java.time.LocalDate.now()) " dalle ${f.format(hm)}" else " da domani" } ?: "") + "." }
+        s.alerts.firstOrNull()?.takeIf { s.shows(CardKeys.ALERTS) }?.let { parts += "Attenzione: allerta ${it.color} per ${it.type.lowercase()} nella tua zona" + (it.from?.let { f -> if (f.toLocalDate() == java.time.LocalDate.now()) " dalle ${f.format(hm)}" else " da domani" } ?: "") + "." }
 
+        // Un'agenda vuota non è un dato da raccontare: se non ci sono impegni, il riepilogo non ne parla.
         if (s.calendarGranted && s.shows(CardKeys.AGENDA)) {
             if (evening) {
-                parts += when (val n = s.tomorrow.size) {
-                    0 -> "Domani l'agenda è libera."
-                    else -> {
-                        val first = s.tomorrow.firstOrNull { !it.allDay } ?: s.tomorrow.first()
-                        val at = if (first.allDay) "" else " alle ${first.start.format(hm)}"
-                        if (n == 1) "Domani hai un impegno: «${first.title}»$at." else "Domani hai $n impegni, si parte con «${first.title}»$at."
-                    }
+                if (s.tomorrow.isNotEmpty()) {
+                    val n = s.tomorrow.size
+                    val first = s.tomorrow.firstOrNull { !it.allDay } ?: s.tomorrow.first()
+                    val at = if (first.allDay) "" else " alle ${first.start.format(hm)}"
+                    parts += if (n == 1) "Domani hai un impegno: «${first.title}»$at." else "Domani hai $n impegni, si parte con «${first.title}»$at."
                 }
-            } else {
+            } else if (s.today.isNotEmpty()) {
                 val upcoming = s.today.filter { it.allDay || it.end.isAfter(s.now) }
                 parts += when {
-                    s.today.isEmpty() -> "Agenda libera per oggi."
                     upcoming.isEmpty() -> "Hai già chiuso tutti gli impegni di oggi."
                     else -> {
                         val next = upcoming.firstOrNull { !it.allDay } ?: upcoming.first()
@@ -87,7 +85,7 @@ object Summary {
             parts += "Per «$label»: ${byMode(rides)}."
         }
 
-        if (health != null) {
+        if (health != null && s.shows(CardKeys.HEALTH)) {
             val sleep = health.sleepMinutes
             if (sleep != null && sleep > 0 && s.daypart == Daypart.MORNING) {
                 parts += "Hai dormito ${durationText(sleep)}" + when {
@@ -103,7 +101,7 @@ object Summary {
             }
         }
 
-        if (usage != null && evening && usage.totalMinutes > 0) {
+        if (usage != null && s.shows(CardKeys.USAGE) && evening && usage.totalMinutes > 0) {
             parts += "Oggi hai usato il telefono per ${durationText(usage.totalMinutes)}."
         }
 
@@ -111,111 +109,127 @@ object Summary {
     }
 
     /**
-     * Mette in ordine il testo dell'IA: una riga per argomento, senza trattini, asterischi o righe vuote.
+     * Mette in ordine il testo dell'IA: paragrafi senza trattini, asterischi o righe vuote.
      * Toglie anche il ragionamento che alcuni modelli scrivono tra <think> e </think>, anche se non è ancora chiuso.
      */
-    private fun tidy(text: String) = text.replace(Regex("(?s)<think>.*?(</think>|$)"), "").replace("*", "")
+    private fun tidy(text: String) = text.replace(Regex("(?s)<think>.*?(</think>|$)"), "").replace("*", "").replace("#", "")
         .lines().map { it.trim().trimStart('-', '•').trim() }.filter { it.isNotEmpty() }.joinToString("\n")
 
     /**
-     * Riscrive il riepilogo con Cloudflare Workers AI (piano gratuito, account e token dell'utente).
-     * [onPartial] riceve il testo man mano che il modello lo scrive, così può comparire subito sullo schermo.
+     * I dati del brief da raccontare: entrano solo le schede accese in "Schede da mostrare" che hanno
+     * davvero qualcosa da dire. Una scheda accesa ma vuota resta fuori, così l'IA non la nomina.
      */
-    fun ai(account: String, token: String, s: BriefState, speed: String = "balanced", onPartial: ((String) -> Unit)? = null): String {
+    private fun aiData(s: BriefState): List<String> = buildList {
         val health = (s.health as? HealthState.Data)?.health
         val usage = (s.usage as? UsageState.Data)?.usage
         val today = java.time.LocalDate.now()
+        val evening = s.daypart == Daypart.EVENING || s.daypart == Daypart.NIGHT
         fun match(m: Match) = "${m.home} - ${m.away}" +
             (if (m.homeScore != null && m.awayScore != null) " ${m.homeScore}-${m.awayScore}" else "") +
             (m.date?.let { " (${it.toLocalDate()} ore ${it.format(hm)})" } ?: "") + (if (m.league.isNotBlank()) ", ${m.league}" else "")
-        // Entra tutto quello che il brief mostra, e solo quello: le schede spente dalle impostazioni restano fuori.
-        val data = buildString {
-            appendLine("Momento: ${s.daypart.title}, ore ${s.now.format(hm)} di ${s.now.toLocalDate()}")
-            if (s.name.isNotBlank()) appendLine("Nome: ${s.name}")
-            if (s.shows(CardKeys.WEATHER)) s.weather?.let { w ->
-                appendLine("Meteo ora a ${w.place}: ${wxText(w.code)}, ${w.temp.roundToInt()}° (percepiti ${w.feels.roundToInt()}°), vento ${w.wind.roundToInt()} km/h, umidità ${w.humidity}%, UV max ${w.uvMax.roundToInt()}")
-                w.today?.let { appendLine("Oggi: ${wxText(it.code)}, min ${it.tMin.roundToInt()}° max ${it.tMax.roundToInt()}°, pioggia ${it.rainProb}%") }
-                w.tomorrow?.let { appendLine("Domani: ${wxText(it.code)}, min ${it.tMin.roundToInt()}° max ${it.tMax.roundToInt()}°, pioggia ${it.rainProb}%") }
-                w.hourly.firstOrNull { it.rainProb >= 50 }?.let { appendLine("Prima pioggia probabile: ${it.time.format(hm)}") }
-                w.aqi?.let { appendLine("Qualità dell'aria: ${aqiText(it)}") }
-                appendLine("Alba ${w.sunrise}, tramonto ${w.sunset}")
-                if (s.shows(CardKeys.POLLEN)) w.pollen.takeIf { it.isNotEmpty() }?.let { p -> appendLine("Pollini: " + p.joinToString { "${it.name} ${it.level}" }) }
+        if (s.shows(CardKeys.WEATHER)) s.weather?.let { w ->
+            add("Meteo ora a ${w.place}: ${wxText(w.code)}, ${w.temp.roundToInt()}° (percepiti ${w.feels.roundToInt()}°), vento ${w.wind.roundToInt()} km/h, umidità ${w.humidity}%, UV max ${w.uvMax.roundToInt()}")
+            w.today?.let { add("Oggi: ${wxText(it.code)}, min ${it.tMin.roundToInt()}° max ${it.tMax.roundToInt()}°, pioggia ${it.rainProb}%") }
+            w.tomorrow?.let { add("Domani: ${wxText(it.code)}, min ${it.tMin.roundToInt()}° max ${it.tMax.roundToInt()}°, pioggia ${it.rainProb}%") }
+            w.hourly.firstOrNull { it.rainProb >= 50 }?.let { add("Prima pioggia probabile: ${it.time.format(hm)}") }
+            w.aqi?.let { add("Qualità dell'aria: ${aqiText(it)}") }
+            add("Alba ${w.sunrise}, tramonto ${w.sunset}")
+            if (s.shows(CardKeys.POLLEN)) w.pollen.takeIf { it.isNotEmpty() }?.let { p -> add("Pollini: " + p.joinToString { "${it.name} ${it.level}" }) }
+        }
+        if (s.shows(CardKeys.ALERTS)) s.alerts.forEach { add("Allerta meteo ${it.color}: ${it.type}") }
+        if (s.calendarGranted) {
+            fun events(list: List<Event>) = list.joinToString("; ") {
+                (if (it.allDay) "tutto il giorno" else it.start.format(hm)) + " " + it.title + (if (it.location.isNotBlank()) " (${it.location})" else "")
             }
-            if (s.shows(CardKeys.ALERTS)) s.alerts.forEach { appendLine("Allerta meteo ${it.color}: ${it.type}") }
-            if (s.calendarGranted && s.shows(CardKeys.AGENDA)) {
-                fun events(list: List<Event>) = list.joinToString("; ") {
-                    (if (it.allDay) "tutto il giorno" else it.start.format(hm)) + " " + it.title + (if (it.location.isNotBlank()) " (${it.location})" else "")
-                }.ifEmpty { "nessuno" }
-                appendLine("Impegni di oggi: " + events(s.today))
-                appendLine("Impegni di domani: " + events(s.tomorrow))
-            }
-            if (s.shows(CardKeys.TODO)) s.todos.filter { !it.checked }.takeIf { it.isNotEmpty() }?.let { open ->
-                appendLine("Cose da fare (to-do list dell'utente, ${open.size} aperte): " + open.take(10).joinToString("; ") { it.text })
-            }
-            if (s.shows(CardKeys.TRAVEL)) s.commute?.let { c ->
-                val day = if (c.day == s.now.toLocalDate()) "oggi" else "domani"
-                when {
-                    c.off -> appendLine("Lavoro: $day non lavora")
-                    c.start != null -> appendLine("Lavoro $day: entra alle ${c.start}" + c.rides.joinToString("") { r ->
-                        "; ${TravelRepo.MODES[r.mode]?.lowercase() ?: r.mode} ${r.minutes} min, uscire entro ${r.leaveBy?.format(hm)}" + (r.detail?.let { d -> " ($d)" } ?: "")
-                    })
-                }
-            }
-            if (s.shows(CardKeys.TRAVEL)) s.travel.forEach {
-                appendLine("Spostamento verso ${it.label} (${TravelRepo.MODES[it.mode]?.lowercase() ?: it.mode}): ${it.minutes} min" + (it.detail?.let { d -> ", $d" } ?: "") + (it.leaveBy?.let { l -> ", partire entro ${l.format(hm)}" } ?: ""))
-            }
-            if (s.shows(CardKeys.HEALTH)) {
-                health?.steps?.let { appendLine("Passi: $it su obiettivo ${s.stepGoal}") }
-                health?.distanceKm?.let { appendLine("Distanza a piedi: ${String.format(Locale.ITALY, "%.1f", it)} km") }
-                health?.calories?.let { appendLine("Calorie bruciate: ${it.roundToInt()}") }
-                health?.sleepMinutes?.takeIf { it > 0 }?.let { appendLine("Sonno stanotte: ${durationText(it)}") }
-                health?.avgHr?.let { appendLine("Battito medio: $it bpm") }
-            }
-            if (s.shows(CardKeys.USAGE)) usage?.let { u ->
-                appendLine("Tempo di utilizzo del telefono oggi: ${durationText(u.totalMinutes)}" +
-                    u.top.take(3).takeIf { it.isNotEmpty() }?.let { t -> " (più usate: " + t.joinToString { "${it.label} ${durationText(it.minutes)}" } + ")" }.orEmpty())
-            }
-            if (s.shows(CardKeys.SPORT)) s.sport?.let { sp ->
-                appendLine("Squadra del cuore: ${sp.team}" + (sp.standing?.let { ", $it" } ?: ""))
-                sp.live?.let { appendLine("Partita in corso adesso: ${match(it)}") }
-                sp.last?.let { appendLine("Ultima partita giocata: ${match(it)}") }
-                if (sp.form.isNotEmpty()) appendLine("Ultimi risultati (V vinta, N pari, P persa, dalla più vecchia): ${sp.form.joinToString("")}")
-                sp.upcoming.take(3).takeIf { it.isNotEmpty() }?.let { appendLine("Prossime partite: " + it.joinToString("; ") { m -> match(m) }) }
-            }
-            if (s.shows(CardKeys.NEWS) && s.news.isNotEmpty()) appendLine("Titoli del giorno: " + s.news.take(6).joinToString("; ") { "${it.title} (${it.topic})" })
-            if (s.shows(CardKeys.MARKETS) && s.markets.isNotEmpty()) appendLine(
-                "Mercati: " + s.markets.joinToString("; ") { m -> "${m.label} ${m.value}" + (m.changePct?.let { " (${String.format(Locale.ITALY, "%+.1f", it)}% oggi)" } ?: "") }
-            )
-            if (s.shows(CardKeys.OCCASIONS)) {
-                if (s.occasions.saints.isNotEmpty()) appendLine("Santi del giorno: " + s.occasions.saints.take(3).joinToString())
-                s.occasions.birthdays.forEach { b ->
-                    appendLine("Compleanno di ${b.name}: " + (if (b.date == today) "oggi" else "il ${b.date}") + (b.age?.let { ", compie $it anni" } ?: ""))
-                }
-                s.occasions.holiday?.let { appendLine("Prossima festività: ${it.name} il ${it.date}") }
-            }
-            if (s.shows(CardKeys.EXTRAS)) {
-                s.moon?.let { appendLine("Luna: ${it.name}, illuminata al ${it.illumination}%") }
-                s.battery?.let { appendLine("Batteria del telefono: ${it.percent}%" + if (it.charging) ", in carica" else "") }
-                s.nextAlarm?.let { appendLine("Prossima sveglia: ${it.toLocalDate()} alle ${it.format(hm)}") }
-                s.onThisDay?.let { appendLine("Accadde oggi nel ${it.year}: ${it.text}") }
+            if (s.shows(CardKeys.AGENDA) && s.today.isNotEmpty()) add("Impegni di oggi: " + events(s.today))
+            // Quelli di domani sono anche nella scheda "Domani", che c'è solo la sera.
+            if ((s.shows(CardKeys.AGENDA) || (evening && s.shows(CardKeys.TOMORROW))) && s.tomorrow.isNotEmpty()) add("Impegni di domani: " + events(s.tomorrow))
+        }
+        if (evening && s.shows(CardKeys.TOMORROW)) s.tomorrowTravel.forEach {
+            add("Per il primo impegno di domani (${it.label}, ${TravelRepo.MODES[it.mode]?.lowercase() ?: it.mode}): ${it.minutes} min" + (it.leaveBy?.let { l -> ", partire entro le ${l.format(hm)}" } ?: ""))
+        }
+        if (s.shows(CardKeys.TODO)) s.todos.filter { !it.checked }.takeIf { it.isNotEmpty() }?.let { open ->
+            add("Cose da fare (to-do list dell'utente, ${open.size} aperte): " + open.take(10).joinToString("; ") { it.text })
+        }
+        if (s.shows(CardKeys.TRAVEL)) s.commute?.let { c ->
+            val day = if (c.day == s.now.toLocalDate()) "oggi" else "domani"
+            when {
+                c.off -> add("Lavoro: $day non lavora")
+                c.start != null -> add("Lavoro $day: entra alle ${c.start}" + c.rides.joinToString("") { r ->
+                    "; ${TravelRepo.MODES[r.mode]?.lowercase() ?: r.mode} ${r.minutes} min, uscire entro ${r.leaveBy?.format(hm)}" + (r.detail?.let { d -> " ($d)" } ?: "")
+                })
             }
         }
-        val instructions = """
-            Sei l'assistente di un'app di riepilogo giornaliero. Scrivi in italiano un riepilogo caldo e concreto,
-            rivolgendoti all'utente con il tu. Ogni riga è una frase breve su un solo argomento e comincia con una
-            emoji adatta all'argomento seguita da uno spazio; vai a capo dopo ogni riga.
-            Tocca tutti gli argomenti presenti nei dati (meteo e allerte, agenda, cose da fare, spostamenti, salute, uso del telefono,
-            squadra e partite, notizie, mercati, ricorrenze, curiosità): una riga per argomento, al massimo 9 righe,
-            unendo quelli vicini se serve. Di ogni argomento scegli il dato più utile adesso, non elencarli tutti,
-            tranne che per gli spostamenti: lì riporta il tempo e l'ora di uscita per ciascun mezzo presente nei dati
-            (auto, mezzi pubblici, bici, a piedi), senza ometterne nessuno.
-            Metti per prime le cose che contano in questo momento della giornata e dai un consiglio pratico se serve.
-            Usa solo i dati forniti, non inventare nulla. Una sola emoji per riga, all'inizio.
-            Niente markdown, niente titoli, niente saluti iniziali.
-        """.trimIndent()
+        if (s.shows(CardKeys.TRAVEL)) s.travel.forEach {
+            add("Spostamento verso ${it.label} (${TravelRepo.MODES[it.mode]?.lowercase() ?: it.mode}): ${it.minutes} min" + (it.detail?.let { d -> ", $d" } ?: "") + (it.leaveBy?.let { l -> ", partire entro ${l.format(hm)}" } ?: ""))
+        }
+        if (s.shows(CardKeys.HEALTH)) {
+            health?.steps?.let { add("Passi: $it su obiettivo ${s.stepGoal}") }
+            health?.distanceKm?.let { add("Distanza a piedi: ${String.format(Locale.ITALY, "%.1f", it)} km") }
+            health?.calories?.let { add("Calorie bruciate: ${it.roundToInt()}") }
+            health?.sleepMinutes?.takeIf { it > 0 }?.let { add("Sonno stanotte: ${durationText(it)}") }
+            health?.avgHr?.let { add("Battito medio: $it bpm") }
+        }
+        if (s.shows(CardKeys.USAGE)) usage?.let { u ->
+            add("Tempo di utilizzo del telefono oggi: ${durationText(u.totalMinutes)}" +
+                u.top.take(3).takeIf { it.isNotEmpty() }?.let { t -> " (più usate: " + t.joinToString { "${it.label} ${durationText(it.minutes)}" } + ")" }.orEmpty())
+        }
+        if (s.shows(CardKeys.SPORT)) s.sport?.let { sp ->
+            add("Squadra del cuore: ${sp.team}" + (sp.standing?.let { ", $it" } ?: ""))
+            sp.live?.let { add("Partita in corso adesso: ${match(it)}") }
+            sp.last?.let { add("Ultima partita giocata: ${match(it)}") }
+            if (sp.form.isNotEmpty()) add("Ultimi risultati (V vinta, N pari, P persa, dalla più vecchia): ${sp.form.joinToString("")}")
+            sp.upcoming.take(3).takeIf { it.isNotEmpty() }?.let { add("Prossime partite: " + it.joinToString("; ") { m -> match(m) }) }
+        }
+        if (s.shows(CardKeys.NEWS) && s.news.isNotEmpty()) add("Titoli del giorno: " + s.news.take(6).joinToString("; ") { "${it.title} (${it.topic})" })
+        if (s.shows(CardKeys.MARKETS) && s.markets.isNotEmpty()) add(
+            "Mercati: " + s.markets.joinToString("; ") { m -> "${m.label} ${m.value}" + (m.changePct?.let { " (${String.format(Locale.ITALY, "%+.1f", it)}% oggi)" } ?: "") }
+        )
+        if (s.shows(CardKeys.OCCASIONS)) {
+            if (s.occasions.saints.isNotEmpty()) add("Santi del giorno: " + s.occasions.saints.take(3).joinToString())
+            s.occasions.birthdays.forEach { b ->
+                add("Compleanno di ${b.name}: " + (if (b.date == today) "oggi" else "il ${b.date}") + (b.age?.let { ", compie $it anni" } ?: ""))
+            }
+            s.occasions.holiday?.let { add("Prossima festività: ${it.name} il ${it.date}") }
+        }
+        if (s.shows(CardKeys.EXTRAS)) {
+            s.moon?.let { add("Luna: ${it.name}, illuminata al ${it.illumination}%") }
+            s.battery?.let { add("Batteria del telefono: ${it.percent}%" + if (it.charging) ", in carica" else "") }
+            s.nextAlarm?.let { add("Prossima sveglia: ${it.toLocalDate()} alle ${it.format(hm)}") }
+            s.onThisDay?.let { add("Accadde oggi nel ${it.year}: ${it.text}") }
+        }
+    }
 
-        return tidy(ask(account, token, instructions, "DATI:\n$data", speed, onText = onPartial?.let { show -> { partial -> show(tidy(partial)) } }))
-            .ifEmpty { throw AiException("l'IA ha risposto senza testo") }
+    /** Come vuole il riepilogo l'utente: quanto lungo, con che tono e con quali richieste sue. */
+    data class Style(val length: String = "normal", val tone: String = "warm", val notes: String = "")
+
+    /**
+     * Scrive il riepilogo con Cloudflare Workers AI (piano gratuito, account e token dell'utente).
+     * Il testo non compare nel brief: è fatto per essere ascoltato, quindi niente emoji né elenchi.
+     */
+    fun ai(account: String, token: String, s: BriefState, speed: String = "balanced", style: Style = Style()): String {
+        val topics = aiData(s)
+        if (topics.isEmpty()) throw AiException("le schede accese non hanno ancora dati da raccontare")
+        val data = (listOf("Momento: ${s.daypart.title}, ore ${s.now.format(hm)} di ${s.now.toLocalDate()}") +
+            listOfNotNull(s.name.takeIf { it.isNotBlank() }?.let { "Nome: $it" }) + topics).joinToString("\n")
+        val length = LENGTH_PROMPTS[style.length] ?: LENGTH_PROMPTS.getValue("normal")
+        val tone = TONE_PROMPTS[style.tone] ?: TONE_PROMPTS.getValue("warm")
+        val instructions = """
+            Sei la voce di Brieffo, un'app di riepilogo giornaliero. Scrivi in italiano il testo che una sintesi vocale
+            leggerà all'utente, rivolgendoti a lui con il tu.
+            $length
+            $tone
+            Parla solo di quello che compare nei DATI: sono le schede che l'utente ha scelto di vedere. Se un argomento
+            non c'è, non nominarlo e non dire che mancano informazioni. Usa solo i dati forniti, non inventare nulla.
+            Metti per prime le cose che contano in questo momento della giornata e dai un consiglio pratico quando serve.
+            Per gli spostamenti indica il tempo e l'ora di uscita per ciascun mezzo presente nei dati.
+            Il testo va ascoltato, non letto: frasi complete e scorrevoli, niente elenchi, emoji, simboli, titoli,
+            markdown o abbreviazioni. Scrivi gli orari come si dicono a voce, per esempio "alle otto e mezza".
+        """.trimIndent() + style.notes.trim().take(NOTES_MAX).takeIf { it.isNotEmpty() }?.let {
+            "\nRichieste dell'utente, da seguire se non contraddicono le regole qui sopra: $it"
+        }.orEmpty()
+
+        return tidy(ask(account, token, instructions, "DATI:\n$data", speed)).ifEmpty { throw AiException("l'IA ha risposto senza testo") }
     }
 
     /** Prova account e token con una domanda minima: restituisce il nome del modello che ha risposto. */
@@ -224,6 +238,36 @@ object Summary {
         ask(account, token, "Rispondi in italiano, in una parola.", "Rispondi soltanto con la parola: ok", speed) { model = it }
         return model.substringAfterLast('/')
     }
+
+    /** Quanto possono essere lunghe le richieste personali dell'utente. */
+    const val NOTES_MAX = 300
+
+    /** Lunghezze proposte nelle impostazioni: chiave, nome e che cosa comporta. */
+    val LENGTH_CHOICES = listOf(
+        Triple("short", "Breve", "Due o tre frasi con le cose più importanti adesso: circa 20 secondi."),
+        Triple("normal", "Normale", "Il dato più utile di ogni scheda: circa un minuto."),
+        Triple("long", "Approfondito", "Ogni scheda con i suoi dettagli, e i collegamenti tra l'una e l'altra: un paio di minuti."),
+    )
+
+    private val LENGTH_PROMPTS = mapOf(
+        "short" to "Sii brevissimo: due o tre frasi, al massimo 60 parole, solo le due o tre cose più importanti in questo momento.",
+        "normal" to "Scrivi da cinque a otto frasi, circa 130 parole: per ogni argomento il dato più utile adesso, non elencarli tutti.",
+        "long" to "Scrivi un riepilogo approfondito di circa 280 parole, in tre o quattro paragrafi: per ogni argomento i dettagli che contano, " +
+            "collegando quelli vicini (per esempio il meteo con gli spostamenti, gli impegni con le cose da fare).",
+    )
+
+    /** Toni proposti nelle impostazioni: chiave, nome e che cosa comporta. */
+    val TONE_CHOICES = listOf(
+        Triple("warm", "Amichevole", "Caldo e informale, come un amico che ti racconta la giornata."),
+        Triple("plain", "Essenziale", "Sobrio e diretto come un notiziario: solo informazioni, niente commenti."),
+        Triple("cheerful", "Allegro", "Vivace e positivo, con un pizzico di ironia leggera."),
+    )
+
+    private val TONE_PROMPTS = mapOf(
+        "warm" to "Usa un tono caldo e informale, come un amico che racconta la giornata. Puoi aprire con un saluto brevissimo, con il nome se c'è.",
+        "plain" to "Usa un tono sobrio e diretto, come un notiziario: niente saluti, niente commenti, solo informazioni utili.",
+        "cheerful" to "Usa un tono vivace e positivo, con un pizzico di ironia leggera quando ci sta, mai sulle notizie serie o sulle allerte. Puoi aprire con un saluto brevissimo, con il nome se c'è.",
+    )
 
     /** Voci di Gemini proposte nelle impostazioni, con il carattere che Google attribuisce a ciascuna. */
     val VOICES = listOf(
@@ -296,7 +340,7 @@ object Summary {
      * Manda a Workers AI le [instructions] e il [prompt] e restituisce il testo della risposta.
      * [onModel] riceve il modello che ha risposto davvero, dopo eventuali tentativi con altri.
      */
-    private fun ask(account: String, token: String, instructions: String, prompt: String, speed: String, onText: ((String) -> Unit)? = null, onModel: (String) -> Unit = {}): String {
+    private fun ask(account: String, token: String, instructions: String, prompt: String, speed: String, onModel: (String) -> Unit = {}): String {
         val id = account.trim()
         // L'ID dell'account è fatto di 32 cifre esadecimali: se non lo è, inutile chiamare Cloudflare.
         if (!id.matches(Regex("[0-9a-fA-F]{32}"))) throw AiException("l'ID account non è valido: sono 32 caratteri tra cifre e lettere da a a f")
@@ -311,14 +355,12 @@ object Summary {
                 )
                 .put("temperature", 0.7)
                 .put("max_tokens", 2048)
-                .put("stream", onText != null)
-            val c = connect(url, "Authorization", "Bearer ${token.trim()}", body) { code, raw -> cloudflareError(code, raw, model) }
-            val text = if (onText != null) stream(c, onText) else {
-                val r = post(c)
-                // Risposta nel formato di OpenAI; quella nativa di Workers AI mette il testo in result.response.
-                r.optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.optString("content")
-                    ?: r.optJSONObject("result")?.optString("response").orEmpty()
-            }
+            val r = post(connect(url, "Authorization", "Bearer ${token.trim()}", body) { code, raw -> cloudflareError(code, raw, model) })
+            // Risposta nel formato di OpenAI; quella nativa di Workers AI mette il testo in result.response.
+            // Il ragionamento dei modelli che pensano arriva a parte (reasoning_content) e resta fuori.
+            val message = r.optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")
+            val text = if (message != null) message.optString("content").takeIf { !message.isNull("content") }.orEmpty()
+            else r.optJSONObject("result")?.optString("response").orEmpty()
             if (tidy(text).isEmpty()) throw AiException("l'IA ha risposto senza testo", retryOtherModel = true)
             onModel(model)
             text
@@ -344,34 +386,6 @@ object Summary {
         throw last ?: AiException("nessun modello disponibile")
     }
 
-    /**
-     * Legge la risposta che arriva a pezzi mentre il modello scrive: a ogni pezzo [onText] riceve
-     * tutto il testo ricevuto fin lì. Restituisce il testo completo.
-     */
-    private fun stream(c: HttpURLConnection, onText: (String) -> Unit): String {
-        try {
-            val all = StringBuilder()
-            c.inputStream.bufferedReader().useLines { lines ->
-                for (line in lines) {
-                    if (!line.startsWith("data:")) continue
-                    val raw = line.removePrefix("data:").trim()
-                    if (raw == "[DONE]") break
-                    val o = runCatching { JSONObject(raw) }.getOrNull() ?: continue
-                    // Il ragionamento dei modelli che pensano arriva a parte (reasoning_content) e resta fuori.
-                    val delta = o.optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("delta")
-                    val piece = if (delta != null) delta.optString("content").takeIf { !delta.isNull("content") }.orEmpty() else o.optString("response")
-                    if (piece.isNotEmpty()) {
-                        all.append(piece)
-                        onText(all.toString())
-                    }
-                }
-            }
-            return all.toString()
-        } finally {
-            c.disconnect()
-        }
-    }
-
     private fun post(c: HttpURLConnection): JSONObject {
         try {
             return JSONObject(c.inputStream.bufferedReader().use { it.readText() })
@@ -389,7 +403,8 @@ object Summary {
         try {
             c.requestMethod = "POST"
             c.connectTimeout = 10_000
-            c.readTimeout = 45_000
+            // Il riepilogo arriva tutto insieme e un modello che ragiona può metterci un po'.
+            c.readTimeout = 90_000
             c.doOutput = true
             c.setRequestProperty("Content-Type", "application/json")
             c.setRequestProperty(header, value)

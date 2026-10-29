@@ -1,22 +1,6 @@
 package com.brieffo.app.ui
 
 import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
-import androidx.compose.material.icons.rounded.KeyboardArrowDown
-import androidx.compose.ui.draw.rotate
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -76,6 +60,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.layout.ContentScale
@@ -109,6 +94,8 @@ import com.brieffo.app.data.NewsRepo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.brieffo.app.data.OnThisDay
+import com.brieffo.app.data.Prefs
+import com.brieffo.app.data.Summary
 import com.brieffo.app.data.UsageState
 import com.brieffo.app.data.Weather
 import com.brieffo.app.data.WxAlert
@@ -142,130 +129,66 @@ internal fun ActionButton(text: String, onClick: () -> Unit) {
     ) { Text(text) }
 }
 
+/** Quanto dura più o meno l'ascolto di [text] alla velocità [speed]: a voce si dicono circa due parole e mezza al secondo. */
+private fun listenTime(text: String, speed: Float): String {
+    val words = Summary.speakable(text).split(' ').count { it.isNotBlank() }
+    val seconds = (words / 2.5f / speed).roundToInt()
+    return when {
+        seconds < 55 -> "circa ${maxOf(5, (seconds + 2) / 5 * 5)} secondi"
+        seconds < 90 -> "circa un minuto"
+        else -> "circa ${(seconds + 30) / 60} minuti"
+    }
+}
+
 /**
- * Segnaposto mostrato mentre l'IA scrive: le righe si riempiono una dopo l'altra, da sinistra a destra,
- * con un cursore in punta, come un testo che viene battuto; poi si ricomincia.
+ * Il riepilogo nel brief non si legge, si ascolta: la scheda mostra solo il tasto, che si accende appena
+ * il testo è pronto. Il testo resta per la notifica e per il widget.
  */
-@Composable
-private fun SummarySkeleton() {
-    val p = LocalPalette.current
-    val widths = listOf(1f, 0.92f, 0.97f, 0.6f)
-    val transition = rememberInfiniteTransition(label = "skeleton")
-    // Da 0 al numero di righe si scrive; l'ultimo tratto è una pausa a righe piene prima di ricominciare.
-    val written by transition.animateFloat(
-        initialValue = 0f, targetValue = widths.size + 0.8f,
-        animationSpec = infiniteRepeatable(tween(2600, easing = LinearEasing), RepeatMode.Restart), label = "written",
-    )
-    val blink by transition.animateFloat(
-        initialValue = 1f, targetValue = 0.25f,
-        animationSpec = infiniteRepeatable(tween(420), RepeatMode.Reverse), label = "cursor",
-    )
-    Column(verticalArrangement = Arrangement.spacedBy(11.dp), modifier = Modifier.padding(vertical = 5.dp)) {
-        widths.forEachIndexed { i, width ->
-            val done = (written - i).coerceIn(0f, 1f)
-            Box(Modifier.fillMaxWidth(width).height(16.dp).background(p.text.copy(alpha = 0.09f), RoundedCornerShape(8.dp))) {
-                if (done > 0f) Box(Modifier.fillMaxWidth(done).height(16.dp).background(p.text.copy(alpha = 0.22f), RoundedCornerShape(8.dp))) {
-                    if (done < 1f) Box(
-                        Modifier.align(Alignment.CenterEnd).size(4.dp, 16.dp).background(p.accent.copy(alpha = blink), RoundedCornerShape(2.dp))
-                    )
-                }
-            }
-        }
-    }
-}
-
-/** Quante righe del riepilogo dell'IA restano visibili quando è chiuso. */
-private const val SUMMARY_PREVIEW = 2
-
-/** Una riga del riepilogo dell'IA: l'emoji con cui comincia diventa l'icona a sinistra. */
-@Composable
-private fun SummaryLine(line: String) {
-    val head = line.substringBefore(' ')
-    val hasIcon = head.length in 1..8 && head.length < line.length && !head.first().isLetterOrDigit()
-    Row {
-        if (hasIcon) Text(head, fontSize = 20.sp, lineHeight = 26.sp, modifier = Modifier.width(36.dp))
-        Text(if (hasIcon) line.substringAfter(' ').trim() else line, fontSize = 17.sp, lineHeight = 26.sp, fontWeight = FontWeight.Medium)
-    }
-}
-
 @Composable
 fun SummaryCard(s: BriefState) {
     val p = LocalPalette.current
-    BriefCard(
-        title = when {
-            s.summaryLoading -> "Riepilogo · l'IA sta scrivendo…"
-            s.summaryByAi -> "Riepilogo · scritto dall'IA"
-            else -> "Riepilogo"
-        },
-        icon = Icons.Rounded.AutoAwesome,
-    ) {
-        // Finché l'IA scrive si vede sempre il segnaposto animato, anche se c'era già un riepilogo.
-        val streaming = s.summaryLoading && s.summaryPartial.isNotBlank()
-        val skeleton = s.summaryLoading && !streaming
-        when {
-            skeleton -> SummarySkeleton()
-            // L'IA ha cominciato a rispondere: le righe compaiono man mano che arrivano.
-            streaming -> Column(Modifier.animateContentSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                s.summaryPartial.lines().filter { it.isNotBlank() }.forEach { SummaryLine(it) }
+    val context = LocalContext.current
+    val ready = !s.loading && !s.summaryLoading && s.summary.isNotEmpty()
+    val speaker = rememberSpeaker()
+    val speed = remember(ready) { Prefs(context).speechSpeed / 100f }
+    BriefCard(title = "Riepilogo", icon = Icons.Rounded.AutoAwesome) {
+        Text(
+            when {
+                s.summaryLoading -> "L'IA sta scrivendo il riepilogo della giornata…"
+                !ready -> "Preparo il riepilogo della giornata…"
+                s.summaryByAi -> "Scritto dall'IA · ${listenTime(s.summary, speed)} di ascolto"
+                else -> "Composto dall'app · ${listenTime(s.summary, speed)} di ascolto"
+            },
+            fontSize = 14.sp, lineHeight = 20.sp, color = p.sub,
+        )
+        Button(
+            onClick = { speaker.toggle(s.summary) },
+            enabled = ready,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = p.accent, contentColor = p.onAccent,
+                disabledContainerColor = p.accent.copy(alpha = 0.35f), disabledContentColor = p.onAccent,
+            ),
+            modifier = Modifier.fillMaxWidth().padding(top = 12.dp).height(56.dp),
+        ) {
+            when {
+                !ready || speaker.status == Speaker.Status.LOADING -> CircularProgressIndicator(Modifier.size(20.dp), color = p.onAccent, strokeWidth = 2.dp)
+                speaker.status == Speaker.Status.PLAYING -> Icon(Icons.Rounded.Stop, null, Modifier.size(22.dp))
+                else -> Icon(Icons.AutoMirrored.Rounded.VolumeUp, null, Modifier.size(22.dp))
             }
-            s.summaryByAi -> {
-                val lines = s.summary.lines().filter { it.isNotBlank() }
-                // Il riepilogo può essere lungo: chiuso mostra solo le prime righe, le più importanti.
-                var expanded by rememberSaveable(s.summaryCollapsed) { mutableStateOf(!s.summaryCollapsed) }
-                val turn by animateFloatAsState(if (expanded) 180f else 0f, label = "chevron")
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) { lines.take(SUMMARY_PREVIEW).forEach { SummaryLine(it) } }
-                AnimatedVisibility(
-                    visible = expanded && lines.size > SUMMARY_PREVIEW,
-                    enter = expandVertically(spring(dampingRatio = 0.9f, stiffness = Spring.StiffnessMediumLow)) + fadeIn(),
-                    exit = shrinkVertically(spring(dampingRatio = 0.9f, stiffness = Spring.StiffnessMediumLow)) + fadeOut(),
-                ) {
-                    Column(Modifier.padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        lines.drop(SUMMARY_PREVIEW).forEach { SummaryLine(it) }
-                    }
-                }
-                if (lines.size > SUMMARY_PREVIEW) Row(
-                    Modifier
-                        .padding(top = 8.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable { expanded = !expanded }
-                        .padding(horizontal = 6.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(Icons.Rounded.KeyboardArrowDown, null, Modifier.size(20.dp).rotate(turn), tint = p.accent)
-                    Text(
-                        if (expanded) "Mostra meno" else "Mostra tutto (altre ${lines.size - SUMMARY_PREVIEW} righe)",
-                        fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = p.accent, modifier = Modifier.padding(start = 4.dp),
-                    )
-                }
-            }
-            else -> Text(
-                text = s.summary.ifEmpty { "Sto preparando il tuo brief…" },
-                fontSize = 18.sp, lineHeight = 27.sp, fontWeight = FontWeight.Medium,
-                color = if (s.summary.isEmpty()) p.sub else p.text,
+            Text(
+                when {
+                    !ready -> "Quasi pronto…"
+                    speaker.status == Speaker.Status.LOADING -> "Preparo la voce…"
+                    speaker.status == Speaker.Status.PLAYING -> "Ferma"
+                    else -> "Ascolta il riepilogo"
+                },
+                fontSize = 17.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 10.dp),
             )
         }
-        if (s.aiError != null && !skeleton) {
-            Text("L'IA non ha risposto (${s.aiError}): questo è il riepilogo dell'app.", fontSize = 12.sp, color = p.sub, modifier = Modifier.padding(top = 10.dp))
+        if (s.aiError != null && ready) {
+            Text("L'IA non ha risposto (${s.aiError}): ascolterai il riepilogo composto dall'app.", fontSize = 12.sp, color = p.sub, modifier = Modifier.padding(top = 10.dp))
         }
-        if (!s.summaryLoading && s.summary.isNotEmpty()) {
-            val speaker = rememberSpeaker()
-            OutlinedButton(onClick = { speaker.toggle(s.summary) }, modifier = Modifier.padding(top = 12.dp)) {
-                when (speaker.status) {
-                    Speaker.Status.LOADING -> CircularProgressIndicator(Modifier.size(16.dp), color = p.accent, strokeWidth = 2.dp)
-                    Speaker.Status.PLAYING -> Icon(Icons.Rounded.Stop, null, Modifier.size(18.dp), tint = p.accent)
-                    Speaker.Status.IDLE -> Icon(Icons.AutoMirrored.Rounded.VolumeUp, null, Modifier.size(18.dp), tint = p.accent)
-                }
-                Text(
-                    when (speaker.status) {
-                        Speaker.Status.LOADING -> "Preparo la voce…"
-                        Speaker.Status.PLAYING -> "Ferma"
-                        Speaker.Status.IDLE -> "Ascolta"
-                    },
-                    color = p.accent, modifier = Modifier.padding(start = 8.dp),
-                )
-            }
-            speaker.note?.let { Text(it, fontSize = 12.sp, color = p.sub, modifier = Modifier.padding(top = 6.dp)) }
-        }
+        speaker.note?.let { Text(it, fontSize = 12.sp, color = p.sub, modifier = Modifier.padding(top = 6.dp)) }
     }
 }
 

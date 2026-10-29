@@ -147,15 +147,33 @@ class Prefs(ctx: Context) {
         get() = sp.getBoolean("railRight", false)
         set(v) = sp.edit { putBoolean("railRight", v) }
 
-    /** Quanto in fretta deve scrivere l'IA:"fast", "balanced" oppure "careful" (vedi Summary.SPEED_CHOICES). */
+    /** Quanto in fretta deve scrivere l'IA: "fast", "balanced" oppure "careful" (vedi Summary.SPEED_CHOICES). */
     var aiSpeed: String
         get() = sp.getString("aiSpeed", "balanced") ?: "balanced"
         set(v) = sp.edit { putString("aiSpeed", v) }
 
-    /** Vero se il riepilogo dell'IA parte chiuso, con solo le prime righe in vista. */
-    var summaryCollapsed: Boolean
-        get() = sp.getBoolean("summaryCollapsed", false)
-        set(v) = sp.edit { putBoolean("summaryCollapsed", v) }
+    /** Quanto lungo deve essere il riepilogo dell'IA: "short", "normal" oppure "long" (vedi Summary.LENGTH_CHOICES). */
+    var aiLength: String
+        get() = sp.getString("aiLength", "normal") ?: "normal"
+        set(v) = sp.edit { putString("aiLength", v) }
+
+    /** Con che tono parla l'IA: "warm", "plain" oppure "cheerful" (vedi Summary.TONE_CHOICES). */
+    var aiTone: String
+        get() = sp.getString("aiTone", "warm") ?: "warm"
+        set(v) = sp.edit { putString("aiTone", v) }
+
+    /** Richieste dell'utente da aggiungere alle istruzioni dell'IA, per esempio "chiamami capo". */
+    var aiNotes: String
+        get() = sp.getString("aiNotes", "") ?: ""
+        set(v) = sp.edit { putString("aiNotes", v.trim().take(Summary.NOTES_MAX)) }
+
+    val aiStyle: Summary.Style get() = Summary.Style(aiLength, aiTone, aiNotes)
+
+    /**
+     * Impronta di quello che decide il testo dell'IA: impostazioni del riepilogo e schede accese.
+     * Se cambia, il riepilogo salvato non vale più e se ne scrive uno nuovo.
+     */
+    val aiSummaryKey: String get() = listOf(aiSpeed, aiLength, aiTone, aiNotes, hidden.sorted().joinToString(",")).joinToString("|")
 
     /** Chi legge il riepilogo: "local" (voce sul telefono, gratuita), "gemini" oppure "phone" (sintesi di Android). */
     var speechEngine: String
@@ -167,12 +185,20 @@ class Prefs(ctx: Context) {
         get() = LocalVoice.voice(sp.getString("localVoice", "") ?: "").id
         set(v) = sp.edit { putString("localVoice", v) }
 
-    /** Ultimo riepilogo scritto dall'IA e quando (millisecondi): si riusa finché è recente, per non consumare richieste. */
+    /**
+     * Ultimo riepilogo scritto dall'IA, quando (millisecondi) e con che impostazioni: si riusa finché è recente
+     * e le impostazioni sono le stesse, per non consumare richieste.
+     */
     var aiSummary: String
         get() = sp.getString("aiSummary", "") ?: ""
-        set(v) = sp.edit { putString("aiSummary", v).putLong("aiSummaryAt", System.currentTimeMillis()) }
+        set(v) = sp.edit { putString("aiSummary", v).putLong("aiSummaryAt", System.currentTimeMillis()).putString("aiSummaryFor", aiSummaryKey) }
 
     val aiSummaryAt: Long get() = sp.getLong("aiSummaryAt", 0)
+
+    /** Il riepilogo salvato, se è più giovane di [maxAge] millisecondi e scritto con le impostazioni di adesso. */
+    fun freshAiSummary(maxAge: Long): String? = aiSummary.takeIf {
+        it.isNotBlank() && System.currentTimeMillis() - aiSummaryAt < maxAge && sp.getString("aiSummaryFor", null) == aiSummaryKey
+    }
 
     /** Voce di Gemini scelta per la lettura (una di Summary.VOICES). */
     var speechVoice: String
@@ -351,9 +377,9 @@ class Prefs(ctx: Context) {
 
     private companion object {
         const val BACKUP_APP = "brieffo"
-        val BACKUP_STRINGS = setOf("name", "city", "geminiKey", "cloudflareAccount", "cloudflareToken", "feeds", "themeMode", "team", "teamRef", "workAddress", "workPoint", "places", "travelModes", "travelMode", "cardOrder", "speechVoice", "speechEngine", "localVoice", "aiSpeed", "notionToken", "notionPageId", "notionPageTitle")
+        val BACKUP_STRINGS = setOf("name", "city", "geminiKey", "cloudflareAccount", "cloudflareToken", "feeds", "themeMode", "team", "teamRef", "workAddress", "workPoint", "places", "travelModes", "travelMode", "cardOrder", "speechVoice", "speechEngine", "localVoice", "aiSpeed", "aiLength", "aiTone", "aiNotes", "notionToken", "notionPageId", "notionPageTitle")
         val BACKUP_INTS = setOf("stepGoal", "notifyHour", "notifyMinute", "accent", "speechSpeed")
-        val BACKUP_BOOLEANS = setOf("notifyEnabled", "summaryCollapsed", "railRight", "weatherAnimated", "leaveAlerts", "liveAlerts")
+        val BACKUP_BOOLEANS = setOf("notifyEnabled", "railRight", "weatherAnimated", "leaveAlerts", "liveAlerts")
         val BACKUP_SETS = setOf("hidden")
     }
 }

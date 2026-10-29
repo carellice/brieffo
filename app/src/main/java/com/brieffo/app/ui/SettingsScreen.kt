@@ -94,6 +94,7 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -368,7 +369,9 @@ fun SettingsScreen(
     var key by remember { mutableStateOf(prefs.geminiKey) }
     var cfAccount by remember { mutableStateOf(prefs.cloudflareAccount) }
     var cfToken by remember { mutableStateOf(prefs.cloudflareToken) }
-    var collapsed by remember { mutableStateOf(prefs.summaryCollapsed) }
+    var aiLength by remember { mutableStateOf(prefs.aiLength) }
+    var aiTone by remember { mutableStateOf(prefs.aiTone) }
+    var aiNotes by remember { mutableStateOf(prefs.aiNotes) }
     var notionToken by remember { mutableStateOf(prefs.notionToken) }
     var notionPage by remember { mutableStateOf(prefs.notionPageId) }
     var notionTitle by remember { mutableStateOf(prefs.notionPageTitle) }
@@ -424,7 +427,9 @@ fun SettingsScreen(
         prefs.geminiKey = key
         prefs.cloudflareAccount = cfAccount
         prefs.cloudflareToken = cfToken
-        prefs.summaryCollapsed = collapsed
+        prefs.aiLength = aiLength
+        prefs.aiTone = aiTone
+        prefs.aiNotes = aiNotes
         prefs.notionToken = notionToken
         prefs.notionPageId = notionPage
         prefs.notionPageTitle = notionTitle
@@ -466,7 +471,9 @@ fun SettingsScreen(
                 key = prefs.geminiKey
                 cfAccount = prefs.cloudflareAccount
                 cfToken = prefs.cloudflareToken
-                collapsed = prefs.summaryCollapsed
+                aiLength = prefs.aiLength
+                aiTone = prefs.aiTone
+                aiNotes = prefs.aiNotes
                 notionToken = prefs.notionToken
                 notionPage = prefs.notionPageId
                 notionTitle = prefs.notionPageTitle
@@ -1013,9 +1020,53 @@ fun SettingsScreen(
         }
 
         val aiReady = cfAccount.isNotBlank() && cfToken.isNotBlank()
-        SettingsSection("Riepilogo con IA", Icons.Rounded.AutoAwesome, if (aiReady) "Scritto da Workers AI" else "Scritto dall'app", "Riepilogo con IA" in openSections, { openSections = if ("Riepilogo con IA" in openSections) openSections - "Riepilogo con IA" else openSections + "Riepilogo con IA" }) {
+        SettingsSection(
+            "Riepilogo con IA", Icons.Rounded.AutoAwesome,
+            if (aiReady) "Workers AI · " + Summary.LENGTH_CHOICES.first { it.first == aiLength }.second + " · " + Summary.TONE_CHOICES.first { it.first == aiTone }.second.lowercase() else "Scritto dall'app",
+            "Riepilogo con IA" in openSections, { openSections = if ("Riepilogo con IA" in openSections) openSections - "Riepilogo con IA" else openSections + "Riepilogo con IA" },
+        ) {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Note("Con un account Cloudflare il riepilogo viene scritto da Workers AI. Il piano gratuito basta per molti riepiloghi al giorno e non serve la carta di credito.")
+                Note("Nel brief il riepilogo non si legge: si ascolta con il tasto della sua scheda, appena è pronto. Parla solo delle schede accese in \"Schede da mostrare\" che hanno qualcosa da dire.")
+                Column {
+                    Note("Quanto approfondito")
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Summary.LENGTH_CHOICES.forEach { (value, label, _) ->
+                            FilterChip(selected = aiLength == value, onClick = { aiLength = value }, label = { Text(label) })
+                        }
+                    }
+                    Note(Summary.LENGTH_CHOICES.first { it.first == aiLength }.third)
+                }
+                Column {
+                    Note("Tono")
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Summary.TONE_CHOICES.forEach { (value, label, _) ->
+                            FilterChip(selected = aiTone == value, onClick = { aiTone = value }, label = { Text(label) })
+                        }
+                    }
+                    Note(Summary.TONE_CHOICES.first { it.first == aiTone }.third)
+                }
+                OutlinedTextField(
+                    aiNotes, { aiNotes = it.take(Summary.NOTES_MAX) },
+                    label = { Text("Richieste personali (facoltative)") },
+                    placeholder = { Text("Per esempio: chiamami capo, dimmi sempre se serve l'ombrello, parlami prima del lavoro") },
+                    supportingText = { Text("${aiNotes.length}/${Summary.NOTES_MAX}") },
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                    minLines = 2, maxLines = 4,
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Note("Lunghezza, tono e richieste valgono per il riepilogo scritto dall'IA: se li cambi, il prossimo viene riscritto da capo. Lo stesso succede se accendi o spegni una scheda.")
+                Column {
+                    Note("Velocità di scrittura")
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Summary.SPEED_CHOICES.forEach { (value, label, _) ->
+                            FilterChip(selected = aiSpeed == value, onClick = { aiSpeed = value; keyTest = null }, label = { Text(label) })
+                        }
+                    }
+                    Note(Summary.SPEED_CHOICES.first { it.first == aiSpeed }.third + " \"Prova il collegamento\" qui sotto usa la velocità scelta e ti dice quanto ci ha messo.")
+                }
+                Text("Collegamento a Cloudflare", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 4.dp))
+                Note("Con un account Cloudflare il riepilogo viene scritto da Workers AI. Il piano gratuito basta per molti riepiloghi al giorno e non serve la carta di credito. Senza, il riepilogo lo compone l'app.")
                 Column(
                     Modifier.fillMaxWidth().background(p.text.copy(alpha = 0.06f), RoundedCornerShape(18.dp)).padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -1040,16 +1091,6 @@ fun SettingsScreen(
                         Text("Apri Cloudflare", color = p.accent)
                     }
                 }
-                Column {
-                    Note("Velocità di scrittura")
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Summary.SPEED_CHOICES.forEach { (value, label, _) ->
-                            FilterChip(selected = aiSpeed == value, onClick = { aiSpeed = value; keyTest = null }, label = { Text(label) })
-                        }
-                    }
-                    Note(Summary.SPEED_CHOICES.first { it.first == aiSpeed }.third + " \"Prova il collegamento\" qui sotto usa la velocità scelta e ti dice quanto ci ha messo.")
-                }
-                ToggleRow("Riepilogo chiuso all'apertura", collapsed, detail = "Mostra le prime due righe: il resto si apre con un tocco") { collapsed = it }
                 Field(cfAccount, { cfAccount = it; keyTest = null }, "ID account Cloudflare (facoltativo)")
                 Field(cfToken, { cfToken = it; keyTest = null }, "Token API Workers AI (facoltativo)", secret = true)
                 OutlinedButton(

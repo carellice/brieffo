@@ -74,10 +74,11 @@ class BriefViewModel(app: Application) : AndroidViewModel(app) {
             val account = prefs.cloudflareAccount
             val token = prefs.cloudflareToken
             val aiReady = prefs.aiReady
-            val savedAi = prefs.aiSummary.takeIf { !forceAi && it.isNotBlank() && System.currentTimeMillis() - prefs.aiSummaryAt < MAX_AGE }
+            // Cambiare lunghezza, tono o schede accese invalida il riepilogo salvato: va riscritto.
+            val savedAi = prefs.freshAiSummary(MAX_AGE).takeIf { !forceAi }
             _state.update {
                 it.copy(
-                    loading = true, summaryLoading = aiReady && savedAi == null, summaryPartial = "", now = now, daypart = Daypart.of(now.hour),
+                    loading = true, summaryLoading = aiReady && savedAi == null, now = now, daypart = Daypart.of(now.hour),
                     name = prefs.name, stepGoal = prefs.stepGoal,
                     calendarGranted = CalendarRepo.granted(app),
                     moon = DeviceRepo.moon(), battery = DeviceRepo.battery(app),
@@ -89,7 +90,6 @@ class BriefViewModel(app: Application) : AndroidViewModel(app) {
                 it.copy(
                     hidden = hidden,
                     cardOrder = prefs.cardOrder,
-                    summaryCollapsed = prefs.summaryCollapsed,
                     railRight = prefs.railRight,
                     weatherAnimated = prefs.weatherAnimated,
                     travelConfigured = prefs.places.isNotEmpty(),
@@ -206,16 +206,15 @@ class BriefViewModel(app: Application) : AndroidViewModel(app) {
                 // Il riepilogo dell'app resta di riserva: finché l'IA scrive, la scheda mostra il caricamento.
                 _state.update { it.copy(loading = false, aiError = null) }
                 val snapshot = _state.value
-                // Il testo compare riga per riga mentre l'IA lo scrive.
-                runCatching { withContext(Dispatchers.IO) { Summary.ai(account, token, snapshot, prefs.aiSpeed) { partial -> _state.update { it.copy(summaryPartial = partial) } } } }
+                runCatching { withContext(Dispatchers.IO) { Summary.ai(account, token, snapshot, prefs.aiSpeed, prefs.aiStyle) } }
                     .onSuccess { text ->
                         prefs.aiSummary = text
-                        _state.update { it.copy(summary = text, summaryByAi = true, summaryLoading = false, summaryPartial = "") }
+                        _state.update { it.copy(summary = text, summaryByAi = true, summaryLoading = false) }
                     }
                     .onFailure { e ->
                         if (e is CancellationException) throw e
                         _state.update {
-                            it.copy(summary = Summary.rules(it), summaryByAi = false, summaryLoading = false, summaryPartial = "", aiError = e.message ?: "connessione non riuscita")
+                            it.copy(summary = Summary.rules(it), summaryByAi = false, summaryLoading = false, aiError = e.message ?: "connessione non riuscita")
                         }
                     }
             }

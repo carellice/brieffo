@@ -393,7 +393,7 @@ class WidgetWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx
             LeaveReminder.plan(ctx, events.filter { it.leaveBy != null } + (commute?.rides ?: emptyList()))
         }
         // Il riepilogo dell'IA resta quello dell'ultima apertura finché è recente: qui non si chiama l'IA.
-        val ai = prefs.aiSummary.takeIf { prefs.aiReady && it.isNotBlank() && System.currentTimeMillis() - prefs.aiSummaryAt < 4 * 60 * 60 * 1000L }
+        val ai = prefs.freshAiSummary(4 * 60 * 60 * 1000L)?.takeIf { prefs.aiReady }
         WidgetStore.update(ctx, state.copy(summary = ai ?: Summary.rules(state)))
         Result.success()
     }
